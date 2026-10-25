@@ -1,0 +1,70 @@
+# Full solution of "Peter's Adventure I" (the EDPACK demo), from FUENTES/*.ED
+wait 9000
+expect level 5
+do 2 186 95            # take the tray -> glass (0) + cheese (1)
+expect inv 0
+expect inv 1
+do 3 225 115           # push the bed over
+do 2 228 117           # the wire is stuck...
+do 2 228 117           # ...now it comes loose -> wire (2)
+expect inv 2
+use 2 150 60           # wire on the bars -> they open
+expect var 1000 1
+shot cell_open
+do 0 214 70            # leave the cell -> courtyard
+waitidle
+expect level 1
+shot courtyard
+do 0 19 135            # left door -> corridor (level 2)
+waitidle
+expect level 2
+do 2 130 125           # take the sack (3)
+expect inv 3
+combine 1 3            # cheese + sack -> sack with cheese (4)
+expect inv 4
+do 0 10 120            # back to the courtyard
+waitidle
+expect level 1
+do 0 290 135           # right door -> cell
+waitidle
+expect level 5
+use 4 73 122           # sack with cheese on the hole -> catch the rat (7) + sack (3)
+expect inv 7
+do 0 214 70
+waitidle
+expect level 1
+do 0 60 115            # door to the corridor with the princess (level 3)
+waitidle
+expect level 3
+use 7 210 110          # the rat on the princess
+do 2 220 142           # take the remains (6)
+expect inv 6
+combine 6 0            # remains + glass of water -> glass with an eye (5)
+expect inv 5
+shot princess
+do 0 305 120           # back to the courtyard
+waitidle
+expect level 1
+use 5 159 104          # give the glass to the sentinel
+expect var 1007 1
+shot sentinel_gone
+do 2 157 110           # take the spear (8)
+expect inv 8
+combine 2 8            # wire + spear -> hook (9)
+expect inv 9
+do 1 150 131           # look into the well
+use 9 150 131          # hook in the well -> necklace (10)
+expect inv 10
+do 0 248 112           # stables (level 4)
+waitidle
+expect level 4
+use 10 198 112         # give the necklace to Henry
+expect var 1011 1
+shot stables
+do 0 15 100            # back to the courtyard
+waitidle
+expect level 1
+do 0 150 90            # leave through the gate
+waitidle
+wait 3000
+expect exited

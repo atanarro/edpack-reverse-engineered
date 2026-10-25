@@ -1,0 +1,10 @@
+[package]
+name = "edpack"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+cpal = "0.18.2"
+minifb = { version = "0.29.0", default-features = false, features = ["x11"] }
+png = "0.18.1"
