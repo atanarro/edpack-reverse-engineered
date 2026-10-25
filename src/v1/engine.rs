@@ -143,6 +143,8 @@ pub struct Engine {
     pub mem: Memory,
     pub code: Vec<i16>,
     pub src: Source,
+    /// LIMIT record size of the RUNVGA build the game was made for
+    pub limit_stride: usize,
     pub font: Font,
     /// gfx slots 0..3: background, things, player/cursor sheet, inventory icons
     pub sheets: [Vec<u8>; 4],
@@ -178,7 +180,9 @@ impl Engine {
         if src.entry(999).is_none() {
             return Err(Error::new(message(1)));
         }
+        let limit_stride = src.version().limit_stride();
         let mut e = Engine {
+            limit_stride,
             mem: Memory::with_vars(var_table()),
             code: vec![0; 5000],
             src,
@@ -285,7 +289,7 @@ impl Engine {
                     return 1;
                 }
                 2 => {
-                    p::go_xy(&mut self.mem, a[0], a[1]);
+                    p::go_xy(&mut self.mem, a[0], a[1], self.limit_stride);
                     next(self, 3);
                     return 1;
                 }

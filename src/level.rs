@@ -61,18 +61,30 @@ pub enum LevelFormat {
     /// Registered v2.0 with RUNDAT.EXE v1.02 (e.g. Dadton): no filler bytes,
     /// 12-byte animation records.
     V102,
+    /// Shareware v2.02 with RUNDAT.EXE v1.03 (the demo on PCManía 67): filler
+    /// bytes like the shareware, 12-byte animation records and the v1.02
+    /// commands.
+    SharewareV102,
 }
 
 impl LevelFormat {
-    pub const ALL: [LevelFormat; 3] = [LevelFormat::Shareware, LevelFormat::Registered, LevelFormat::V102];
+    /// In detection order: the v1.02 layouts must be tried before the ones
+    /// they extend, since old-layout parses of new data can still fit.
+    pub const ALL: [LevelFormat; 4] =
+        [LevelFormat::SharewareV102, LevelFormat::Shareware, LevelFormat::Registered, LevelFormat::V102];
 
     fn fillers(self) -> bool {
-        self == LevelFormat::Shareware
+        matches!(self, LevelFormat::Shareware | LevelFormat::SharewareV102)
     }
 
     /// Size of one ANIMATION record.
     pub fn anim_size(self) -> usize {
-        if self == LevelFormat::V102 { 12 } else { 10 }
+        if self.is_v102() { 12 } else { 10 }
+    }
+
+    /// Made for the v1.02 runtime (skip key, PUTXY, SEEANIM...).
+    pub fn is_v102(self) -> bool {
+        matches!(self, LevelFormat::V102 | LevelFormat::SharewareV102)
     }
 }
 

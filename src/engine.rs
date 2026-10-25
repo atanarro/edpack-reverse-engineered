@@ -23,7 +23,7 @@ use crate::font::Font;
 use crate::game::Game;
 use crate::host::{self, Core, Fatal, Host};
 pub use crate::host::{Frame, Input, Key};
-use crate::level::{LevelFormat, file_entry, gfx_entry, load_data_file, load_level, thing_name};
+use crate::level::{file_entry, gfx_entry, load_data_file, load_level, thing_name};
 use crate::memory::{Memory, THING_SIZE, ds, v102};
 use crate::pcx::decode_pcx;
 use crate::player as p;
@@ -195,7 +195,7 @@ impl Engine {
         let mou_file = MouseFile::load(game.special(Special::Mou))?;
         let title = load_title(game.special(Special::Tit))?;
         let iac = load_iac(game.special(Special::Iac))?;
-        let v102 = game.level_format() == LevelFormat::V102;
+        let v102 = game.level_format().is_v102();
         let mut e = Engine {
             mem: if v102 { Memory::with_vars(Memory::v102_vars()) } else { Memory::new() },
             code: vec![0; 5000],

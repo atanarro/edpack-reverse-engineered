@@ -61,9 +61,10 @@ fn feet_y(m: &Memory) -> i32 {
 }
 
 /// GOXY(x, y): LIMIT redirection, LIMITMOV routing, start walking.
-pub fn go_xy(m: &mut Memory, mut x: i32, mut y: i32) {
+/// `limit_stride` is the LIMIT record size of the RUNVGA build (14, or 12 in v1.0).
+pub fn go_xy(m: &mut Memory, mut x: i32, mut y: i32, limit_stride: usize) {
     for i in 0..30 {
-        let l = LIMIT + 14 * i;
+        let l = LIMIT + limit_stride * i;
         if m.i16(l) == 0 {
             continue;
         }

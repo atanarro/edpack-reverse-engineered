@@ -340,7 +340,7 @@ impl Engine {
         let target = self.mem.u8(held::OBJ) as usize;
         let walk_to = |e: &mut Engine, t: usize| {
             let (x, y) = (e.mem.i16(thing(t) + 0x35), e.mem.i16(thing(t) + 0x37));
-            p::go_xy(&mut e.mem, x, y);
+            p::go_xy(&mut e.mem, x, y, e.limit_stride);
             e.mem.set8(g::ACTION_PC, 1);
         };
         match a {
@@ -567,7 +567,7 @@ impl Engine {
         }
         let (px, py) = self.hotspot();
         if self.mem.u8(held::STATE) != 1 && self.mem.u8(g::ACTION) == 0 && hover_thing == 0 && py < 0x94 {
-            p::go_xy(&mut self.mem, px, py);
+            p::go_xy(&mut self.mem, px, py, self.limit_stride);
         }
         if self.mem.u8(held::STATE) != 0 && !speaking {
             if hover_inv != 0 {

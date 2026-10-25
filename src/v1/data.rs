@@ -44,6 +44,25 @@ pub const INV_RECORD: usize = 0x118;
 /// Size of the font (entry 998).
 pub const FONT_SIZE: usize = 0x32cd;
 
+/// The RUNVGA builds, which differ in the level layout.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Version {
+    /// RUNVGA.EXE v1.0 (the EDPACK v1 demo): 12-byte LIMIT records.
+    V100,
+    /// RUNVGA.EXE v1.03 (e.g. Manolo Kabezabolo): 14-byte LIMIT records.
+    #[default]
+    V103,
+}
+
+impl Version {
+    /// Size of a LIMIT record as the interpreter steps through the table.
+    /// (v1.0 still reads 7 words per record, so its last field overlaps the
+    /// next record.)
+    pub fn limit_stride(self) -> usize {
+        if self == Version::V100 { 12 } else { 14 }
+    }
+}
+
 /// Where a v1 game's data comes from (`RUNVGA -f<archive>` or `-n<base>`).
 pub enum Source {
     Archive(Vec<u8>),
@@ -102,6 +121,19 @@ impl Source {
         }
     }
 
+    /// The RUNVGA build the levels were made for: the layout under which
+    /// level 0's graphics name decodes to a plausible file name.
+    pub fn version(&self) -> Version {
+        let Some((bytes, off)) = self.entry(0) else { return Version::default() };
+        let plausible = |v: Version| {
+            let base = off + 0x6752 - (14 - v.limit_stride()) * 30;
+            let Some(raw) = bytes.get(base..base + 13) else { return false };
+            let name: Vec<u8> = raw.iter().take_while(|&&c| c != 0).map(|c| c.wrapping_sub(KEY_GFX)).collect();
+            !name.is_empty() && name.iter().all(|&c| c.is_ascii_graphic()) && name.contains(&b'.')
+        };
+        [Version::V103, Version::V100].into_iter().find(|&v| plausible(v)).unwrap_or_default()
+    }
+
     pub fn is_archive_mode(&self) -> bool {
         matches!(self, Source::Archive(_))
     }
@@ -118,11 +150,23 @@ impl Source {
 /// Load level `n` into memory (0x1e23 / 0x1895). Returns the 5000-word code.
 pub fn load_level(m: &mut Memory, src: &Source, n: usize) -> Result<Vec<i16>, Error> {
     let (bytes, off) = src.entry(n).ok_or_else(|| Error::new(format!("No encuentro el nivel '{n}'.")))?;
-    let need = if src.is_archive_mode() { 0x7000 } else { 0x6f40 };
+    let short = (14 - src.version().limit_stride()) * 30;
+    let need = if src.is_archive_mode() { 0x7000 } else { 0x6f40 } - short;
     if off + need > bytes.len() {
         return Err(Error::new(format!("Error al intentar leer el nivel '{n}'.")));
     }
     let b = &bytes[off..];
+    // v1.0 levels have a shorter LIMIT table: rebuild the v1.03 layout, with
+    // the raw 12-byte records padded to the v1.03 table size.
+    let short = (14 - src.version().limit_stride()) * 30;
+    let norm: Vec<u8>;
+    let b: &[u8] = if short == 0 {
+        b
+    } else {
+        let lim = 0x294 + 0x1a4 - short;
+        norm = [&b[..lim], &vec![0; short][..], &b[lim..]].concat();
+        &norm
+    };
     let i16at = |o: usize| i16::from_le_bytes([b[o], b[o + 1]]) as i32;
     m.write(ds::LIMITMOV, &b[0..0x294]);
     m.write(ds::LIMIT, &b[0x294..0x438]);
