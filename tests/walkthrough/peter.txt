@@ -1,4 +1,4 @@
-# Full solution of "Peter's Adventure I" (the EDPACK demo), from FUENTES/*.ED
+# Full solution of "Peter's Adventure I" (the EDPACK demo), from its .ED sources
 wait 9000
 expect level 5
 do 2 186 95            # take the tray -> glass (0) + cheese (1)

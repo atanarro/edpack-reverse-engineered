@@ -1,8 +1,7 @@
 # EDPACK in Rust
 
 A modern re-implementation of **EDPACK v2.0** ("Editor de Aventuras Gráficas", José Luis
-Serrano Moreno, 1990s), the Spanish DOS toolkit for point-and-click graphic adventures in this
-repository. It plays the games made with it natively, and it also replaces the DOS-only
+Serrano Moreno, 1990s), the Spanish DOS toolkit for point-and-click graphic adventures. It plays the games made with it natively, and it also replaces the DOS-only
 toolchain.
 
 It is based on the shareware version of the Editor de Aventuras Gráficas (EDPACK) v2.02. That
@@ -18,10 +17,9 @@ version was distributed for free on the CD-ROM included with *PCManía* magazine
 | `ED2DAT.EXE` | `edc <src> <out> --pack` | Packs a game into `EDGAME.DAT` |
 | `SBFMDRV.COM`, `CT-VOICE.DRV` | `src/audio/` | OPL2 FM emulator for CMF music, VOC playback |
 
-The engine was built by reverse-engineering the original interpreter. The included demo,
-*Peter's Adventure I*, exists both compiled (`../DEMO/EDGAME.DAT`) and as sources
-(`../FUENTES`). The test suite plays it to the end from both, and from an `EDGAME.DAT` built by
-`edc --pack`, and checks that all three runs end at the same simulated moment.
+The engine was built by reverse-engineering the original interpreter. The EDPACK package comes
+with a demo game, *Peter's Adventure I*, both compiled (`EDGAME.DAT`) and as `.ED` sources. No
+EDPACK files or games are included in this repository; get them from the CD image above.
 
 ## Building
 
@@ -32,12 +30,19 @@ You need Rust (stable). On Linux you also need the ALSA development headers for 
 cargo build --release
 ```
 
+To make `edpack` play a game when started without arguments, name its `EDGAME.DAT` at build
+time:
+
+```sh
+EDPACK_DEMO_DAT=/path/to/EDGAME.DAT cargo build --release
+```
+
 ## Playing
 
 ```sh
-target/release/edpack                    # the bundled demo
-target/release/edpack ../DEMO/EDGAME.DAT # any EDPACK game
-target/release/edpack ../FUENTES         # a folder: EDGAME.DAT, NIVEL.* files or .ED sources
+target/release/edpack game/EDGAME.DAT   # any EDPACK game
+target/release/edpack game              # a folder: EDGAME.DAT, NIVEL.* files or .ED sources
+target/release/edpack                   # the game embedded at build time, if any
 ```
 
 Options:
@@ -63,13 +68,25 @@ The controls are those of the original:
 ## Tools
 
 ```sh
-target/release/edc ../FUENTES out --pack                 # ED.EXE + ED2DAT.EXE
-target/release/edtool run ../DEMO/EDGAME.DAT shots tests/walkthrough/peter.txt   # headless play + PNGs
-target/release/edtool disasm ../DEMO/EDGAME.DAT 3        # decompile level 3's scripts
-target/release/edtool dump ../DEMO/EDGAME.DAT            # summary of every level
-target/release/edtool cmf2wav ../FUENTES/SATAIR.CMF satair.wav
-cargo test --release                                     # unit and end-to-end tests
+target/release/edc src out --pack                    # ED.EXE + ED2DAT.EXE
+target/release/edtool run EDGAME.DAT shots tests/walkthrough/peter.txt   # headless play + PNGs
+target/release/edtool disasm EDGAME.DAT 3            # decompile level 3's scripts
+target/release/edtool dump EDGAME.DAT                # summary of every level
+target/release/edtool cmf2wav src/SATAIR.CMF satair.wav
+cargo test --release                                 # unit and end-to-end tests
 ```
+
+The end-to-end tests need the demo game. Point them at its compiled `EDGAME.DAT` and at the folder
+with its sources:
+
+```sh
+EDPACK_DEMO_DAT=/path/to/DEMO/EDGAME.DAT EDPACK_DEMO_SRC=/path/to/FUENTES cargo test --release
+```
+
+They play the demo to the end three ways: from the original `EDGAME.DAT`, from the sources, and
+from an `EDGAME.DAT` built by `edc --pack`. They check that all three runs end at the same
+simulated moment, and that the compiler's output matches the original ED.EXE's. Without these
+variables, the tests skip.
 
 For debugging, `EDPACK_SNAPSHOT=<seconds>:<file.png> edpack ...` saves the window after that
 many seconds and quits.

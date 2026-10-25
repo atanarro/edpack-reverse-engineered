@@ -1,7 +1,11 @@
 //! End-to-end tests: the demo adventure is played to its ending, from the
-//! original packed EDGAME.DAT, from the FUENTES sources compiled by our
-//! compiler, and from an EDGAME.DAT built by our packer; the compiler output
-//! is compared with what the original ED.EXE produced.
+//! original packed EDGAME.DAT, from its .ED sources compiled by our compiler,
+//! and from an EDGAME.DAT built by our packer; the compiler output is compared
+//! with what the original ED.EXE produced.
+//!
+//! The demo is not part of this repository: set EDPACK_DEMO_DAT to its
+//! EDGAME.DAT and EDPACK_DEMO_SRC to the folder with its sources, otherwise
+//! these tests are skipped.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -15,17 +19,21 @@ use edpack::harness::Harness;
 use edpack::level::{load_level, text_string};
 use edpack::memory::{Memory, ds};
 
-fn repo() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+fn env_path(name: &str) -> PathBuf {
+    std::env::var_os(name).map(PathBuf::from).unwrap_or_default()
 }
 fn dat_path() -> PathBuf {
-    repo().join("DEMO/EDGAME.DAT")
+    env_path("EDPACK_DEMO_DAT")
 }
 fn src_path() -> PathBuf {
-    repo().join("FUENTES")
+    env_path("EDPACK_DEMO_SRC")
 }
 fn have_demo() -> bool {
-    dat_path().exists() && src_path().exists()
+    let ok = dat_path().is_file() && src_path().is_dir();
+    if !ok {
+        eprintln!("skipped: set EDPACK_DEMO_DAT and EDPACK_DEMO_SRC to run the demo tests");
+    }
+    ok
 }
 fn walkthrough() -> String {
     std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/walkthrough/peter.txt")).unwrap()
