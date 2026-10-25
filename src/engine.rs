@@ -182,7 +182,7 @@ pub struct Engine {
     pub mixer: Arc<Mutex<Mixer>>,
     storage: Box<dyn Storage>,
     rng: u64,
-    /// RUNDAT v1.02 behaviour (Dadton): see docs/reverse-engineering/07-rundat-versions.md.
+    /// RUNDAT v1.02 behaviour (Dadton): see docs/v2-rundat/07-versions.md.
     pub v102: bool,
 }
 

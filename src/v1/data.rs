@@ -1,6 +1,6 @@
 //! RUNVGA v1 data: the RESOURCE.DAT archive (or loose `base.nnn` files), the
 //! level loader, PCX pictures, the font and the inventory file.
-//! See docs/reverse-engineering/v1/01-formats.md.
+//! See docs/v1-runvga/01-formats.md.
 
 use std::collections::BTreeMap;
 use std::path::Path;

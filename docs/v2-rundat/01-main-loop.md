@@ -2,10 +2,10 @@
 
 Addresses: code = linear in RUNDAT.bin (near call targets wrap mod 0x10000); data = DS offsets (DS base = linear 0x12a80).
 Verified by disassembly unless marked **(?)**. Companion specs written in the same pass (same directory):
-* `spec_level.md` — GOLEVEL/DEFSCR, level loader 0x24ec, change_level 0x1b64, ACTION 0 at entry, DOOR, NEWMOVS/NEWMOUSE, transitions.
-* `spec_palette.md` — palette buffers, merge 0x2210, MODPAL/RPAL/LPAL/PUTPAL, fades, PCX decoder, SHOWPCX/LOADPCX/LOADRGB.
-* `spec_timing_media.md` — PIT/ISR, ticks, SETUP.CFG, PLAYFLI, CMF/VOC, EXIT, nag screen.
-* `spec_menu.md` (earlier pass) — keyboard ISR, MENU.
+* [`02-levels-transitions.md`](02-levels-transitions.md) — GOLEVEL/DEFSCR, level loader 0x24ec, change_level 0x1b64, ACTION 0 at entry, DOOR, NEWMOVS/NEWMOUSE, transitions.
+* [`05-palettes-pcx.md`](05-palettes-pcx.md) — palette buffers, merge 0x2210, MODPAL/RPAL/LPAL/PUTPAL, fades, PCX decoder, SHOWPCX/LOADPCX/LOADRGB.
+* [`06-timing-media.md`](06-timing-media.md) — PIT/ISR, ticks, SETUP.CFG, PLAYFLI, CMF/VOC, EXIT, nag screen.
+* [`04-text-ui-inventory-menu.md`](04-text-ui-inventory-menu.md) (appendix B) — keyboard ISR, MENU.
 This file covers the main loop and everything else of the task, with short summaries of those specs where they are needed.
 
 ---------------------------------------------------------------------------------------------------
@@ -122,7 +122,7 @@ main(argc, argv):
   fatal(0)                  // normal termination path (Ctrl+C) — see timing/media spec for what fatal(0) prints
 ```
 Note: NIVEL.INV (entry 6), NIVEL.MOV (8), NIVEL.MOU (9) are **not** loaded here. INV palette is read by level-0
-setup; MOV/MOU only by the NEWMOVS / NEWMOUSE opcodes (normally in ACTION 0 of level 0). See spec_level.md.
+setup; MOV/MOU only by the NEWMOVS / NEWMOUSE opcodes (normally in ACTION 0 of level 0). See 02-levels-transitions.md.
 Level 0 itself is loaded by the first main-loop pass because fc9d (0xff) != fc9c (0).
 
 ---------------------------------------------------------------------------------------------------
@@ -563,10 +563,10 @@ stamp persists until the background is reloaded (LOADPCX type 0 / scroll transit
 (The name field looks intended for re-stamping on re-entry, but no such code was found. (?))
 
 ---------------------------------------------------------------------------------------------------
-## 8. Timing, ISR, SETUP.CFG — summary (details in spec_timing_media.md)
+## 8. Timing, ISR, SETUP.CFG — summary (details in 06-timing-media.md)
 * PIT channel 0 is reprogrammed by `set_timer_rate(hz)` 0xde7 (divisor 1193180/hz via port helper 0xe3c, so no
   literal `out 43h` exists) with W[dd] = 50 -> **1 tick = 20 ms** (50 Hz). Restored to 18.2 Hz in fatal().
-  (spec_menu.md says "100 Hz": that is wrong — the old int 8 handler is chained twice per tick, so BIOS time
+  (an earlier pass said "100 Hz": that is wrong — the old int 8 handler is chained twice per tick, so BIOS time
   advances 100 counts/s, but the engine tick is 50 Hz.)
 * INT 8 handler 0x3dc5 per tick: chains old int 8 (also again at the end); if B[97] != 1 samples the mouse
   position into fd4a/fd4c; runs the cursor state machine (fd46: 2/4 erase -> 3 hidden; 5 redraw -> 0; else redraw
@@ -590,7 +590,7 @@ stamp persists until the background is reloaded (LOADPCX type 0 / scroll transit
   scancode = var25. SPACE (0x39) opens MENU (if var28 == 1); Ctrl+C held ends the program.
 
 ---------------------------------------------------------------------------------------------------
-## 9. Level transitions — summary (details in spec_level.md)
+## 9. Level transitions — summary (details in 02-levels-transitions.md)
 * GOLEVEL(l, door, mode) only stores fc9c/fcd1/fcd2 (fatal 200 if l >= 6) and yields; the main loop calls
   change_level() at the start of the next pass ((d) in §2), before animations and actions.
 * change_level: cursor hidden, fcc9/fcca = 0, inventory/verb state reset (fd2b=fd2c=fd2e=0 — the cursor table is
@@ -608,7 +608,7 @@ stamp persists until the background is reloaded (LOADPCX type 0 / scroll transit
 * Shareware: level numbers >= 6 -> fatal(200) (checked in GOLEVEL and in many drawing/text routines).
 
 ---------------------------------------------------------------------------------------------------
-## 10. Palettes, SHOWPCX, LOADPCX — summary (details in spec_palette.md)
+## 10. Palettes, SHOWPCX, LOADPCX — summary (details in 05-palettes-pcx.md)
 * DS:2580 = current (uploaded) palette, DS:2280 = original/base. MODPAL reads 2280 -> writes 2580; PUTPAL copies
   2580 -> 2280; RPAL/LPAL rotate 2580. Any change sets fcd3=1 -> uploaded at the end of the pass (§2).
 * Merge 0x2210 (level load, LOADPCX, LOADRGB): start from ESCENARIO palette; every colour that is pure white
@@ -616,7 +616,7 @@ stamp persists until the background is reloaded (LOADPCX type 0 / scroll transit
 * SHOWPCX modes 0..3 (+10 instant black then fade in, +20 no fade-out): see palette spec; no yield.
 
 ---------------------------------------------------------------------------------------------------
-## 11. Media / EXIT — summary (details in spec_timing_media.md)
+## 11. Media / EXIT — summary (details in 06-timing-media.md)
 * PLAYFLI(file, mode, secs) op 62 -> 0xe4c: blocking (own loop; animations/actions frozen); standard Autodesk FLI
   (magic 0xAF11 only; FLC rejected, fatal 0x33), chunks 4 COLOR256, 11 COLOR, 12 LC, 13 BLACK, 15 BRUN, 16 COPY,
   others skipped; frame delay = trunc(speed*50/70)+1 ticks; modes 0..11 as in the manual (once / abort on any

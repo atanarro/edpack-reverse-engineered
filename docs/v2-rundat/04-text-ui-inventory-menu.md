@@ -12,8 +12,8 @@ Sections:
 3. STEXT (dialogue choices)
 4. Information bar
 5. Mouse cursor, verbs, click handling, MMOUSE
-6. Inventory -> see **spec_inv.md** (with a short summary here)
-7. MENU / savegames -> see **spec_menu.md** (with a short summary here)
+6. Inventory -> see **Appendix A** (with a short summary here)
+7. MENU / savegames -> see **Appendix B** (with a short summary here)
 8. Variable defaults and the word-overlap quirks that matter for the UI
 
 ---------------------------------------------------------------------------------------------------
@@ -92,7 +92,7 @@ Text line slots: 5 x 0x67 bytes at DS:f9cb (slot i at f9cb + i*0x67):
 Text-id resolution (SPEAK accepts all three ranges, PTEXT only the first):
 * id < 1000   -> level text pool: DS:9823 + textoffs[id] (DS:962f, i16). An offset of -1 points at DS:9822, which
   holds an empty string.
-* 1000..1999  -> description text of inventory **slot** (id-1000): far[DS:3796] + (id-1000)*0x4aa (+0). The records are per slot, not per object; see spec_inv.md
+* 1000..1999  -> description text of inventory **slot** (id-1000): far[DS:3796] + (id-1000)*0x4aa (+0). The records are per slot, not per object; see Appendix A
 * >= 2000     -> engine message (id-2000) at DS:3bfa + (id-2000)*250. The 5 slots are filled from the level's
   message blocks (0 = ?, 1 = NOACINVINV, 2 = NOACINVOBJ, 3 = ?, 4 = YESACINVINV). The engine uses 2001, 2002, 2004.
   At start-up all 5 slots are set to "¡¡¡ ATENCION !!!^Este texto no esta definido." (DS:0c44). A level only
@@ -409,10 +409,10 @@ Note: the action number is truncated to a byte.
 Picking an object in the inventory makes it the cursor/held object (8a8c=1, 8a8d/8a8e = object). The info bar
 then shows "<obj> & <target>". A left click on a THING queues 8a91=100, 8a92=thing, 8a90=1. The next frame runs
 0x7e0b (ACINVTH lookup). Clicking an inventory slot combines objects (0x7d29: IAC table, YESACINVINV 2004 /
-NOACINVINV 2001). Details: **spec_inv.md**.
+NOACINVINV 2001). Details: **Appendix A**.
 
 ---------------------------------------------------------------------------------------------------
-## 6. Inventory — summary (full spec in spec_inv.md)
+## 6. Inventory — summary (full spec in Appendix A)
 * NIVEL.INV: 30-byte header, u16 count, 768-byte palette, then 0x4aa-byte records at 0x320: text[250] (+0x1E),
   name[30] (+0x20), u16 w, u16 h, w*h pixels (pre-cut picture, colour 0 transparent).
 * Slots: 30 x 6 bytes at DS:8a95 {u8 used, u8 flag, u16 obj, u16 cache}. ADDINV copies the record into the first
@@ -422,12 +422,12 @@ NOACINVINV 2001). Details: **spec_inv.md**.
   Only Mirar/Usar work inside it (right-click toggles them). Mirar says the slot text (id 1000+slot).
   Usar picks the object up (the info bar shows "Name & ..."; the cursor graphic does NOT change).
 * Combining uses NIVEL.IAC (50 x {used,obj1,obj2,new,mode}): SPEAK 2004 on success, 2001 on failure.
-  Using an object on a THING goes through ACINVTH, with the fallback SPEAK 2002. See spec_inv.md.
+  Using an object on a THING goes through ACINVTH, with the fallback SPEAK 2002. See Appendix A.
 
-## 7. MENU — summary (full spec in spec_menu.md)
+## 7. MENU — summary (full spec in Appendix B)
 It opens with **SPACE** (scancode 0x39 in [dc]) when var28==1, or with op 52 MENU. ESC only closes it.
 The panel is (48,10)-(270,132) with the title from NIVEL.TIT and buttons CARGAR/GUARDAR/SALIR/JUGAR at x 207..267,
-y 46/61/75/89. There are 8 savegame slots SAVEGAME._1_.._8_. The file format is in spec_menu.md.
+y 46/61/75/89. There are 8 savegame slots SAVEGAME._1_.._8_. The file format is in Appendix B.
 
 ---------------------------------------------------------------------------------------------------
 ## 8. Defaults (varinit 0xb78c) and overlap quirks
@@ -468,14 +468,14 @@ y 46/61/75/89. There are 8 savegame slots SAVEGAME._1_.._8_. The file format is 
 A port aiming at exact behaviour should model these variables as overlapping bytes.
 
 ## Open points / uncertain
-* What fca7 / 8a8d / 8a8e hold exactly, and the " con " path (verb 8), are described in spec_inv.md. I found no setter for verb 8.
+* What fca7 / 8a8d / 8a8e hold exactly, and the " con " path (verb 8), are described in Appendix A. I found no setter for verb 8.
 * The talking-animation sequence mapping (d2/d3/d4) is copied literally; I did not confirm it against NIVEL.MOV.
 * Message slots 0 and 3 of the level message blocks: I could not tie them to a compiler keyword
   (slot 0 is used as the "undefined text" replacement).
 
 
 ---------------------------------------------------------------------------------------------------
-# APPENDIX A — Inventory (full, from spec_inv.md)
+# APPENDIX A — Inventory 
 
 # EDPACK v2.0 RUNDAT — Inventory spec (item 6)
 
@@ -760,14 +760,14 @@ The inventory object is never removed automatically; scripts use SUBINV.
 
 
 ---------------------------------------------------------------------------------------------------
-# APPENDIX B — MENU and savegames (full, from spec_menu.md)
+# APPENDIX B — MENU and savegames 
 
 # MENU (load / save / quit) and SAVEGAME._N_ — RUNDAT.EXE spec
 
 All addresses: code = linear in RUNDAT.bin (near call targets wrap mod 0x10000), data = DS offsets.
 Screen = 320x200 8bpp. "backbuf" = far [DS:3792] (work screen), "VGA" = far [DS:37a6] (A000:0000),
 "blit(x,y,w,h)" = 0x4149 copy backbuf rect -> VGA (also composites cursor). Font text = 0x70d0(x,y,str,color,border,...)
-(font/renderer: see spec_ui.md), textwidth = 0x78a8.
+(font and renderer: §1–§3 of this document), textwidth = 0x78a8.
 
 ## 1. Keyboard state ([DS:dc] = var25)
 

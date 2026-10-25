@@ -6,7 +6,7 @@ below are **DS offsets** (data) or **code offsets** (functions, written `fn 0x..
 against the unicorn reference emulator (`scratchpad/re/ui_play.py`) with *Las Aventuras de Manolo
 Kabezabolo*; screenshots in `img/`.
 
-Compared with v2 (`../01-main-loop.md`, `../04-text-ui-inventory-menu.md`): v1 has **no verbs and no
+Compared with v2 ([`../v2-rundat/01-main-loop.md`](../v2-rundat/01-main-loop.md), [`../v2-rundat/04-text-ui-inventory-menu.md`](../v2-rundat/04-text-ui-inventory-menu.md)): v1 has **no verbs and no
 verb cursor**. Left and right mouse buttons have fixed meanings, the inventory is a permanent 8-slot
 bar at the bottom of the screen, and the label line is fixed at y=155. Rendering uses a "work"
 buffer composited over the background with dirty rectangles; the cursor is drawn by the timer ISR

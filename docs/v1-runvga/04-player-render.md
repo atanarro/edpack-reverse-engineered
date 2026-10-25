@@ -112,7 +112,7 @@ GOXY does not reset 91fd/91fe; the click handler does (§2.3).
 
 ### 2.2 Walker — 0x3e6a, once per main-loop pass
 
-Verified bit-exact. It is v2's 0x45d2 algorithm (see `../03-player-movement.md` §2.3), with these changes:
+Verified bit-exact. It is v2's 0x45d2 algorithm (see [`../v2-rundat/03-player-movement.md`](../v2-rundat/03-player-movement.md) §2.3), with these changes:
 - **Direction setup:** the X "already there" test compares `P.x == 91dd` (the sprite's **left edge**), not feet x. If P.x happens to equal the left edge, dirX becomes 0xff and that leg does not move in X. Y uses feet y, as in v2.
 - **Step countdown:** reloaded with `[3536]` whether or not the player is speaking. v2 used double the value while speaking.
 - **Step sizes:** X steps are byte [987] (half for dirX 3/4 while Y is moving). Y steps are byte [986] (half while dirX is 1/2).

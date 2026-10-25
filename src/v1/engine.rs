@@ -1,6 +1,6 @@
 //! The RUNVGA v1.03 interpreter: engine state, start-up, level changes, the
 //! bytecode interpreter (0x2464) and its helpers.
-//! See docs/reverse-engineering/v1/.
+//! See docs/v1-runvga/.
 
 use std::sync::{Arc, Mutex};
 

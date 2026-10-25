@@ -1,6 +1,6 @@
 //! RUNVGA v1 main loop (0x5037), timer interrupt, input, click actions,
 //! texts, the label line and the screen composition.
-//! See docs/reverse-engineering/v1/03-mainloop-ui.md and 04-player-render.md.
+//! See docs/v1-runvga/03-mainloop-ui.md and 04-player-render.md.
 
 use super::data::{self, THING_SIZE, ds};
 use super::engine::{Engine, RETRACE_MS, g};

@@ -1,5 +1,5 @@
 //! Player movement of RUNVGA v1: GOXY (0x7dab) and the walker (0x3e6a).
-//! A literal port, bugs included (see docs/reverse-engineering/v1/04-player-render.md).
+//! A literal port, bugs included (see docs/v1-runvga/04-player-render.md).
 
 use crate::memory::Memory;
 

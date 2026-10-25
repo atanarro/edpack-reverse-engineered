@@ -1,3 +1,8 @@
+# RUNDAT.EXE (EDPACK v2.0): overview — files, functions, EDGAME.DAT, levels, things, variables, bytecode
+
+The first map of the interpreter, written at the start of the work. The other documents in this
+folder go into each area in detail and supersede it where they disagree.
+
 > **About these documents.** They were produced while reverse-engineering RUNDAT.EXE (unpacked
 > with an emulator and disassembled) and checked against the demo game, whose sources (FUENTES)
 > and compiled form (DEMO/EDGAME.DAT) are both available. Paths like `SCRATCH/...` refer to the
@@ -13,7 +18,7 @@
 > * SELECTEXT = {i16 text[5], i16 used}; SCALEMOV = {used,x1,y1,x2,y2,redW,redH,speedX,speedY};
 >   SHADOWMOV = {used,x1,y1,x2,y2,shade}; ACINVTH = {mode,inv,thing,action}.
 
-# EDPACK v2.0 reverse-engineering notes (shared context)
+## Files and tools
 
 Files of the original EDPACK v2.0 kit (not part of this repository):
 - MANUAL.TXT (Spanish, cp1252) — language manual. UTF-8 copy: SCRATCH/manual.txt

@@ -116,7 +116,7 @@ So level 0's ACTION 0 must call GOLEVEL, and normally also NEWMOVS/NEWMOUSE; see
 * Opens EDGAME.DAT and reads the u32 at fc9c*4 (0 -> fatal 0x65). Seeks there and reads the 30-byte header (0x2c49: fd70, fd6f, fd6e = version bytes, fd6d = type).
 * Version check against DS:94..96 = {2,0,0}: fatal 0x78 ("requiere ED.EXE v%d.%d%d") if fd70 < 2, or if the minor byte is lower.
 * Type must be 0, else fatal 0xb ("NIVEL.???").
-* Then the RLE blocks listed in NOTES.md, in that order.
+* Then the RLE blocks listed in [00-overview.md](00-overview.md), in that order.
 * The 5 messages (DS:3bfa + i*250) are copied **only if the decoded string is non-empty**. Empty messages keep the previous level's text.
 * Then raw reads of the FILE table (DS:435a, 0xa0) and gfx table (DS:433a, 0x20), then fclose.
 * 0xc2b4(1): decodes the thing names (each char -13, up to NUL) for the 30 things whose name byte != 0.

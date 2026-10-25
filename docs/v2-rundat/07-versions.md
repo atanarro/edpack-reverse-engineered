@@ -59,7 +59,7 @@ Registered builds seek the special files at fixed entries **1000+k** (main() / l
 Level n is still at `fseek(4n)`; the level number is a **u16** in both registered builds (byte in the demo).
 
 ### 2.2 Level files
-Same RLE block sequence as the demo loader 0x24ec (see `00-overview-notes.md`), with two changes:
+Same RLE block sequence as the demo loader 0x24ec (see [`00-overview.md`](00-overview.md)), with two changes:
 
 * **registered (v1.0 and v1.02): none of the single-byte skips** (`fgetc` after gfx names, after LIMITMOV,
   after THING_ORDER, after the text pool, after ANIMS, after SELECTEXT) — the six skip calls are gone from the
@@ -278,7 +278,7 @@ registered v1.0: `entry + 0x20 + sext16((obj * 0x4aa + 0x300) & 0xffff)`, wrong 
 cleared are < var23 either way).
 
 ### 4.13 Savegames (v1.02)
-Same header (`00 FF 02 03` + title check) and block order as the demo (`04-text-ui-inventory-menu.md` §5), with:
+Same header (`00 FF 02 03` + title check) and block order as the demo ([`04-text-ui-inventory-menu.md`](04-text-ui-inventory-menu.md) §5), with:
 block 2 = 0x18d bytes from RAND_COUNTER (covers 0xfabe..0xfc4a: the new variables and all globals), block 16
 ANIMS 0x258, block 31 cursor table 0x78. Not compatible with v1.0 savegames, and there is no version check
 that would detect it. The Rust engine's own save format must add: the 12-byte animation records, variables

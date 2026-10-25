@@ -1,5 +1,5 @@
 //! The SPACE menu (0xabda) and the save/load dialogs (0x8046 / 0x915b).
-//! See docs/reverse-engineering/v1/03-mainloop-ui.md §9.
+//! See docs/v1-runvga/03-mainloop-ui.md §9.
 
 use crate::host::{Exit, Key};
 

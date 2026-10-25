@@ -84,7 +84,7 @@ pub const EXT_BASE: usize = SCRATCH_VAR_ADDR + 16;
 pub const MEMORY_SIZE: usize = EXT_BASE + 0x100;
 
 /// RUNDAT v1.02 additions, in the extension area
-/// (docs/reverse-engineering/07-rundat-versions.md §4).
+/// (docs/v2-rundat/07-versions.md §4).
 pub mod v102 {
     use super::EXT_BASE;
     /// 50 x i16: the animations' skip targets (record word +0x0a), -1 = none.

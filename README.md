@@ -28,7 +28,7 @@ Games known to work, each played to its ending by the test suite:
 | *Dadton Aguinández* (Coctel Software, 1998) | EDPACK v2.02 | `RUNDAT.EXE` v1.02 |
 | *Las Aventuras de Manolo Kabezabolo* (Digital Legion, 1997) | EDPACK v1 | `RUNVGA.EXE` v1.03 |
 
-The variant is detected from the data. See [`docs/edpack-history.md`](docs/edpack-history.md)
+The variant is detected from the data. See [`docs/history.md`](docs/history.md)
 for the versions; the Windows rewrite EDPACK 2000 is a different program and is not supported.
 
 The engine was built by reverse-engineering the original interpreter. The EDPACK package comes
@@ -148,11 +148,11 @@ many seconds and quits.
 - **v2 runtime variants** (`level.rs`, `dat.rs`). The registered archives have 1000 level slots,
   the registered level files lack the shareware's filler bytes, and RUNDAT v1.02 has 12-byte
   animation records, a skip key, PXY/ISANIM, a 200-operation limit and some UI changes. The
-  layout is detected by parsing the levels each way. Details: `docs/reverse-engineering/07-rundat-versions.md`.
+  layout is detected by parsing the levels each way. Details: `docs/v2-rundat/07-versions.md`.
 - **EDPACK v1** (`v1/`). A separate engine for RUNVGA.EXE: its own data segment layout, the raw
   level tables of `RESOURCE.DAT`, the 41-opcode interpreter, the walker, the verbless click
   logic, the inventory bar, texts, the incremental screen updates and the SPACE menu. Details:
-  `docs/reverse-engineering/v1/`.
+  `docs/v1-runvga/`.
 
 Some quirks of the original are reproduced on purpose, because games were tested against them:
 
@@ -170,9 +170,9 @@ Some things are deliberately different:
 - FM music comes from an emulator.
 - Fades run at a fixed speed. The original's fade speed depended on the CPU.
 
-The full reverse-engineering notes are in [`docs/reverse-engineering/`](docs/reverse-engineering/). The
-EDPACK versions, their interpreters and the games known to use them are described in
-[`docs/edpack-history.md`](docs/edpack-history.md).
+The documentation is in [`docs/`](docs/README.md): the EDPACK versions and the games known to use
+them ([`docs/history.md`](docs/history.md)), and the reverse-engineering specs of both interpreters
+([`docs/v1-runvga/`](docs/v1-runvga/), [`docs/v2-rundat/`](docs/v2-rundat/)).
 
 ## License
 

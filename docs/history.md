@@ -22,7 +22,7 @@ sold it ("EDPACK v1.0 … 3000 Pts."). Its interpreter is `RUNVGA.EXE`; the copy
 Kabezabolo identifies itself as "RUNVGA.EXE v1.03 Por Jose Luis Serrano Moreno" (Sep 1996).
 `NUEVO.TXT` of v2.0 lists what v1 lacked: scaling, light/shadow zones, scrolling, areas to walk
 around, 30 objects per room and in the inventory, FIRSTFRAME/NEXTFRAME/PMOV, the font editor,
-STEXT dialogues, FLI animations. Reverse-engineering notes: [`reverse-engineering/v1/`](reverse-engineering/v1/).
+STEXT dialogues, FLI animations. Reverse-engineering notes: [`v1-runvga/`](v1-runvga/).
 
 ### EDPACK v2.0x
 
@@ -35,7 +35,7 @@ Shareware and registered editions of the DOS v2. All interpreters identify thems
 | registered | `RUNDAT.EXE v1.0` (dated 26 Jun 1997) | *El Dios de Nauru* (BYK Software, 2001; its credits say "Creada con EDPACK v2.03") | 1000 levels (1006-entry table), u16 level number, no filler bytes |
 | registered v2.02 | `RUNDAT.EXE v1.02` | *Dadton Aguinández* (Coctel Software, 1998: "Desarrollada en Edpack v.2.02") | as registered, plus 12-byte animation records, SKIPTO / PXY / ISANIM, 200-op limit, new variables, UI changes |
 
-Behavioural differences between these runtimes: [`reverse-engineering/07-rundat-versions.md`](reverse-engineering/07-rundat-versions.md).
+Behavioural differences between these runtimes: [`v2-rundat/07-versions.md`](v2-rundat/07-versions.md).
 
 Note that Nauru (2001, "EDPACK v2.03") ships the older v1.0 runtime while Dadton (1998, v2.02)
 ships v1.02: the runtime version number does not follow the kit version.
