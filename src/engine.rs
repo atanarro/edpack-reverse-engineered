@@ -184,9 +184,27 @@ pub struct Engine {
     rng: u64,
     /// RUNDAT v1.02 behaviour (Dadton): see docs/v2-rundat/07-versions.md.
     pub v102: bool,
+    /// RUNDAT v1.03: 16-bit program counters (the action's at CUR_ACTION_PC,
+    /// with its compare flag moved out of the way).
+    pub wide_pc: bool,
+}
+
+/// The current action's program counter: u8, or u16 with RUNDAT v1.03.
+fn action_pc(m: &Memory, wide: bool) -> i32 {
+    if wide { m.u16(ds::CUR_ACTION_PC) } else { m.u8(ds::CUR_ACTION_PC) }
+}
+
+fn set_action_pc(m: &mut Memory, wide: bool, v: i32) {
+    if wide { m.set16(ds::CUR_ACTION_PC, v) } else { m.set8(ds::CUR_ACTION_PC, v) }
 }
 
 impl Engine {
+    /// Where the current action's compare flag lives (it follows the u8 pc;
+    /// RUNDAT v1.03 moved it to make room for a u16 pc).
+    fn action_flag(&self) -> usize {
+        if self.wide_pc { v102::ACTION_FLAG_V103 } else { g::CMP_FLAG }
+    }
+
     pub fn new(game: Game, storage: Box<dyn Storage>, opts: Options) -> Result<Engine, Error> {
         let fnt =
             game.special(Special::Fnt).ok_or_else(|| Error::new("No encuentro el fichero de LETRAS 'NIVEL.FNT'."))?;
@@ -196,6 +214,7 @@ impl Engine {
         let title = load_title(game.special(Special::Tit))?;
         let iac = load_iac(game.special(Special::Iac))?;
         let v102 = game.level_format().is_v102();
+        let wide_pc = game.level_format().wide_pc();
         let mut e = Engine {
             mem: if v102 { Memory::with_vars(Memory::v102_vars()) } else { Memory::new() },
             code: vec![0; 5000],
@@ -225,6 +244,7 @@ impl Engine {
             storage,
             rng: opts.seed | 1,
             v102,
+            wide_pc,
         };
         e.mem.write(g::IAC, &iac);
         e.init_globals(opts.speed, opts.text_speed);
@@ -625,7 +645,8 @@ impl Engine {
             if count > limit {
                 self.fatal(0x34, "");
             }
-            let pc = self.mem.u8(pc_addr);
+            let wide = self.wide_pc;
+            let pc = if wide { self.mem.u16(pc_addr) } else { self.mem.u8(pc_addr) };
             let at = base + pc;
             let opc = self.word(at);
             if opc == op::END {
@@ -634,12 +655,15 @@ impl Engine {
             let (raw0, raw1) = (self.word(at + 1), self.word(at + 2));
             let (a0, a1) = (self.value(raw0), self.value(raw1));
             let (a2, a3) = (self.value(self.word(at + 3)), self.value(self.word(at + 4)));
-            let next = |e: &mut Self, n: i32| e.mem.set8(pc_addr, pc + n);
+            let next = |e: &mut Self, n: i32| {
+                if wide { e.mem.set16(pc_addr, pc + n) } else { e.mem.set8(pc_addr, pc + n) }
+            };
             let flag = self.mem.u8(flag_addr);
             macro_rules! jump {
                 ($cond:expr) => {{
                     if $cond {
-                        self.mem.set8(pc_addr, raw0)
+                        // v1.03 stores the whole target, older builds its low byte
+                        if wide { self.mem.set16(pc_addr, raw0) } else { self.mem.set8(pc_addr, raw0) }
                     } else {
                         next(self, 2)
                     }
@@ -679,7 +703,7 @@ impl Engine {
                     // writes the global current-action slot, then keeps running
                     // with the same base (quirk of the original)
                     self.mem.set8(ds::CUR_ACTION, a0);
-                    self.mem.set8(ds::CUR_ACTION_PC, 0);
+                    set_action_pc(&mut self.mem, self.wide_pc, 0);
                 }
                 op::VAR => {
                     self.mem.set_var(raw0, raw1);
@@ -858,7 +882,7 @@ impl Engine {
                     self.mem.set_var(a0, r);
                     next(self, 3);
                 }
-                op::SKIPTO if self.v102 => {
+                op::ASLT if self.v102 => {
                     self.mem.set8(g::KEY, 0);
                     if anim != -1 {
                         self.mem.set16(v102::ANIM_SKIP + 2 * anim.clamp(0, 49) as usize, raw0);
@@ -867,13 +891,13 @@ impl Engine {
                     }
                     next(self, 2);
                 }
-                op::NOSKIP if self.v102 => {
+                op::DSLT if self.v102 => {
                     // QUIRK: word +0x0c of record `anim` = `active` of record anim+1
                     let i = (anim as i8 as i32 + 1) as usize;
                     self.mem.set16(ds::ANIMS + i.wrapping_mul(10), -1);
                     next(self, 1);
                 }
-                op::PXY if self.v102 => {
+                op::PUTXY if self.v102 => {
                     if a0 != -100 {
                         let w = self.mem.i16(p::W);
                         self.mem.set16(p::X, a0 - w / 2);
@@ -884,9 +908,9 @@ impl Engine {
                     }
                     next(self, 3);
                 }
-                op::ISANIM if self.v102 => {
+                op::SEEANIM if self.v102 => {
                     let on = self.mem.i16(ds::ANIMS + (a0 as usize).wrapping_mul(10)) == 1;
-                    self.mem.set16(v102::VAR48_ISANIM, on as i32);
+                    self.mem.set16(v102::VAR48_SEEANIM, on as i32);
                     next(self, 2);
                 }
                 op::SEEINV => {
@@ -991,7 +1015,7 @@ impl Engine {
                 }
             }
             if self.v102 {
-                // SKIPTO: checked for every record, active or not
+                // ASLT: checked for every record, active or not
                 let skip_at = v102::ANIM_SKIP + 2 * i;
                 let skip = self.mem.i16(skip_at);
                 if skip != -1 {
@@ -1049,12 +1073,12 @@ impl Engine {
     /// run_action (0x7937): verb approach states and the current ACTION script.
     fn run_action(&mut self) {
         let m = &self.mem;
-        let (cur, pc) = (m.u8(ds::CUR_ACTION), m.u8(ds::CUR_ACTION_PC));
+        let (cur, pc) = (m.u8(ds::CUR_ACTION), action_pc(m, self.wide_pc));
         let (t, v) = (m.u8(inv::HELD_OBJ), m.u8(mo::CLICK_VERB));
         let walking = m.u8(p::WALKING) != 0;
         let set = |e: &mut Self, a: i32, pc: i32| {
             e.mem.set8(ds::CUR_ACTION, a);
-            e.mem.set8(ds::CUR_ACTION_PC, pc);
+            set_action_pc(&mut e.mem, e.wide_pc, pc);
         };
         let actions = |e: &Self, verb: i32| e.mem.i16(Self::thing_addr(t) + 0x48 + 2 * verb as usize);
         match cur {
@@ -1137,10 +1161,10 @@ impl Engine {
                 if self.v102 && self.mem.i16(v102::SKIP_TARGET) != -1 {
                     let target = self.mem.i16(v102::SKIP_TARGET);
                     if self.mem.u8(g::KEY) == self.mem.i16(v102::VAR47_SKIP_KEY) {
-                        self.mem.set8(ds::CUR_ACTION_PC, target);
+                        set_action_pc(&mut self.mem, self.wide_pc, target);
                         self.mem.set8(g::KEY, 0);
                     }
-                    if self.mem.u8(ds::CUR_ACTION_PC) >= target {
+                    if action_pc(&self.mem, self.wide_pc) >= target {
                         // reached or skipped past the label: end texts, stop walking
                         self.mem.set16(v102::SKIP_TARGET, -1);
                         ui::clear_texts(self);
@@ -1152,7 +1176,8 @@ impl Engine {
                 let walking = self.mem.u8(p::WALKING) != 0;
                 if self.mem.i16(tx::ACTIVE) == 0 && !walking {
                     let base = self.mem.i16(ds::ACTION_OFFS + 2 * cur as usize);
-                    if self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, g::CMP_FLAG, -1) == vm::FINISHED {
+                    if self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, self.action_flag(), -1) == vm::FINISHED
+                    {
                         set(self, 0, 0);
                     }
                 }
@@ -1289,7 +1314,7 @@ impl Engine {
                 self.mem.set16(g::PENDING_TEXT, id);
             }
             self.mem.set8(ds::CUR_ACTION, s);
-            self.mem.set8(ds::CUR_ACTION_PC, pc);
+            set_action_pc(&mut self.mem, self.wide_pc, pc);
         };
         if a >= 5000 {
             set(100, 1, Some(a - 5000));
@@ -1326,7 +1351,7 @@ impl Engine {
             if (iv == o || iv == -100) && (th == t || th == -100) {
                 let res = self.mem.i16(a + 6);
                 self.mem.set8(inv::RESULT, res);
-                self.mem.set8(ds::CUR_ACTION_PC, 0);
+                set_action_pc(&mut self.mem, self.wide_pc, 0);
                 let state = match mode {
                     1 => Some((102, 0)),
                     2 => Some((102, 3)),
@@ -1338,7 +1363,7 @@ impl Engine {
                 };
                 if let Some((s, pc)) = state {
                     self.mem.set8(ds::CUR_ACTION, s);
-                    self.mem.set8(ds::CUR_ACTION_PC, pc);
+                    set_action_pc(&mut self.mem, self.wide_pc, pc);
                 }
                 found = true;
                 break;
@@ -1351,7 +1376,7 @@ impl Engine {
             }
             self.mem.set8(inv::RESULT, 0);
             self.mem.set8(ds::CUR_ACTION, 102);
-            self.mem.set8(ds::CUR_ACTION_PC, 0);
+            set_action_pc(&mut self.mem, self.wide_pc, 0);
         }
         self.mem.set8(g::TARGET, t);
         self.mem.set8(inv::PENDING, 0);
@@ -1637,9 +1662,10 @@ impl Engine {
     fn change_level(&mut self) {
         loop {
             self.hide_cursor();
+            let wide = self.wide_pc;
             let m = &mut self.mem;
             m.set8(ds::CUR_ACTION, 0);
-            m.set8(ds::CUR_ACTION_PC, 0);
+            set_action_pc(m, wide, 0);
             m.set8(inv::OPEN, 0);
             m.set8(mo::VERB, 0);
             m.set8(mo::SAVED_VERB, 0);
@@ -1690,7 +1716,7 @@ impl Engine {
             self.mem.set16(0xfc05, x);
             self.mem.set16(0xfc07, y);
             self.mem.set8(ds::CUR_ACTION, saved);
-            self.mem.set8(ds::CUR_ACTION_PC, 0);
+            set_action_pc(&mut self.mem, self.wide_pc, 0);
             let mode = self.mem.u8(ds::NEXT_MODE);
             self.transition(mode);
             self.show_cursor();
@@ -1700,6 +1726,7 @@ impl Engine {
     }
 
     fn place_at_door(&mut self) {
+        let wide = self.wide_pc;
         let m = &mut self.mem;
         let d = ds::DOORS + m.u8(ds::NEXT_DOOR) as usize * 10;
         let (w, h) = (m.i16(p::MOV_W), m.i16(p::MOV_H));
@@ -1735,19 +1762,19 @@ impl Engine {
             m.set16(p::SRCX, v); // original bug: fc09 written twice, fc0b untouched
             m.set8(ds::CUR_ACTION, 0);
         }
-        m.set8(ds::CUR_ACTION_PC, 0);
+        set_action_pc(m, wide, 0);
     }
 
     /// ACTION 0 of a level runs to completion at once; its yields are ignored.
     fn run_action0(&mut self) {
         self.mem.set8(ds::CUR_ACTION, 0);
-        self.mem.set8(ds::CUR_ACTION_PC, 0);
+        set_action_pc(&mut self.mem, self.wide_pc, 0);
         let base = self.mem.i16(ds::ACTION_OFFS);
         if base == 0 {
             return;
         }
         for _ in 0..100_000 {
-            let r = self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, g::CMP_FLAG, -1);
+            let r = self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, self.action_flag(), -1);
             if r == vm::FINISHED || self.exited {
                 return;
             }

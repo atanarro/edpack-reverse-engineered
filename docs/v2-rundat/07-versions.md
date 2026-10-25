@@ -1,14 +1,24 @@
-# RUNDAT.EXE versions: shareware v1.0, registered v1.0, v1.02 — spec of the differences
+# RUNDAT.EXE versions: shareware v1.0, registered v1.0, v1.02, shareware v1.03 — spec of the differences
 
 The Rust engine reproduces the **shareware RUNDAT.EXE v1.0** shipped with the demo ("demo" below; all addresses
 in the other documents and in `src/` are its DS offsets). Two other builds of the EDPACK v2 interpreter exist
-in other games:
+in other games and kits:
 
 | build | game | version string | opcodes | notes |
 |---|---|---|---|---|
 | shareware v1.0 | demo (*Peter's Adventure I*) | `RUNDAT.EXE v1.0` + `Version SHAREWARE` | 1..66 | the reference |
 | registered v1.0 | *El Dios de Nauru* (`RUNDAT.EXE`, 44173 bytes) | `RUNDAT.EXE v1.0` | 1..66 | shareware limits removed, new archive layout |
 | v1.02 | *Dadton Aguinández* (`Dadton.exe` = renamed RUNDAT, 44685 bytes) | `RUNDAT.EXE v1.02` | 1..69 | + 4 opcodes, 8 variables, 12-byte animations, inventory/cursor changes |
+| shareware v1.03 | the demo as rebuilt for the EDPACK **v2.02** shareware kit (PCManía 67, `SHAREWAR/VARIOS/EDPACK20`; `RUNDAT.EXE` 45133 bytes, demo `EDGAME.DAT` 376500 bytes) | `RUNDAT.EXE v1.03` + `Version SHAREWARE` | 1..69 | v1.02 plus 16-bit program counters, with the shareware limits and layout (§5) |
+
+The v1.02 additions are documented officially in the v2.02 kit's `UPDATE/NUEVO.TXT` (Update 1, 27 Nov 1997,
+and Update 2, 15 Dec 1997) and in its updated `MANUAL.TXT` ("Editor de Aventuras Gráficas v2.02 —
+ACTUALIZACION 1"). That gives the official command names, used below: **ASLT** (op 18), **DSLT** (67), **PUTXY**
+(68), **SEEANIM** (69); the kit's `ED.DAT` lists `DSLT 67 0`, `PUTXY 68 2`, `SEEANIM 69 1`, and ED.EXE compiles
+`ASLT label;` like a jump (op 18, target pc). Changelog, in short: variables 28–32 fixed, GOLEVEL mode 5 fixed,
+RAND fixed (fine up to 100), 200 consecutive commands instead of 51, PUTXY, SEEANIM + var 48, ASLT/DSLT + var 47,
+var 49 (walking), vars 50–53 (cursor/verb control), DEFMOUSE with 10 cursors + var 54, inventory objects ≥ 27
+fixed.
 
 Method: the three unpacked images were aligned instruction by instruction (normalised mnemonics, `bindiff.py`),
 which gives a code map and a DS map between builds; every unaligned block and every aligned instruction whose
@@ -37,6 +47,13 @@ was used. The data does:
    at the right place, because the RLE run that covers the ANIMS block is simply truncated.
    Corroborating signal: the NIVEL.MOU entry holds 72 bytes per cursor set in v1.0 data (6 cursors) and 120
    bytes per set in v1.02 data (10 cursors): `(next_entry_offset - mou_offset - 32) / count` = 72 / 120.
+3. **Shareware v1.0 vs v1.03** (12-entry archives): the same test as 2 — a v1.03 demo parses with the filler
+   bytes *and* a 0x258-byte ANIMS block, ending every RLE block on a token boundary; v1.0 data does not.
+
+`detect_format` (src/level.rs) tries, in this order, `SharewareV103`, `Shareware`, `Registered`, `V102`, and
+keeps the first layout under which every level parses with each RLE block ending exactly on a token boundary
+(and the resource tables in bounds). The v1.02-style layouts come first because an old-layout parse of new data
+can still fit.
 
 Loose files (RUNFILES-style NIVEL.nnn) of registered games have not been seen; presumably the same two layouts.
 
@@ -123,11 +140,11 @@ New / changed opcodes (pc in words; "continue" = no yield, next op in the same c
 
 | op | proposed name | args | semantics |
 |---|---|---|---|
-| 18 | `SKIPTO(label)` | 1, **raw** (re-read from the code, not dereferenced) | `B[KEY 0xdc] = 0; if anim != -1: ANIM[anim].skip = label else W[SKIP_TARGET] = label; pc += 2; continue` |
+| 18 | `ASLT label` (manual: `ASLT com1;`) | 1, **raw** (re-read from the code, not dereferenced) | `B[KEY 0xdc] = 0; if anim != -1: ANIM[anim].skip = label else W[SKIP_TARGET] = label; pc += 2; continue` |
 | 54 | `RAND(var, n)` | 2 | `var = trunc(f32(c * f32(n / 100.0f)))` with `c = B[RAND_COUNTER]` (0..100, §4.4); pc += 3; continue. (v1.0: `var = (n % 100) * hundredths_of_DOS_time`, see §6) |
-| 67 | `NOSKIP` **(?)** | 0 | `ANIM[(i8)anim + 1].active = -1` (word 0xffff); pc += 1; continue — see note |
-| 68 | `PXY(x, y)` | 2 (deref'd) | `if x != -100: W[fc01] = x - W[fc0d]/2` (player left = x − width/2, signed division); `if y != -100: W[fc03] = y - W[fc0f]` (top = y − height); pc += 3; continue. Places the player's feet at (x, y) without walking; does not touch the walk state or fd3c/fd3e |
-| 69 | `ISANIM(n)` | 1 (deref'd) | `var48 = (ANIM[n].active == 1) ? 1 : 0`; pc += 2; continue |
+| 67 | `DSLT()` | 0 | `ANIM[(i8)anim + 1].active = -1` (word 0xffff); pc += 1; continue — see note |
+| 68 | `PUTXY(x, y)` | 2 (deref'd) | `if x != -100: W[fc01] = x - W[fc0d]/2` (player left = x − width/2, signed division); `if y != -100: W[fc03] = y - W[fc0f]` (top = y − height); pc += 3; continue. Places the player's feet at (x, y) without walking; does not touch the walk state or fd3c/fd3e |
+| 69 | `SEEANIM(n)` | 1 (deref'd) | `var48 = (ANIM[n].active == 1) ? 1 : 0`; pc += 2; continue |
 
 Op 67 note: the code is `mov al,[bp+12h]; cbw; imul ax,12; mov word [bx+1c3ch], -1`, i.e. offset +0x0c of
 record `anim` = `active` of record `anim+1` (and of record 0 when called from an action, `anim = -1`). Setting
@@ -135,7 +152,7 @@ record `anim` = `active` of record `anim+1` (and of record 0 when called from an
 skip target of this script" (+0x0a), but the faithful behaviour is the one above. None of the four new opcodes
 (nor variables 47..54) is used by Dadton's scripts, so none of this is exercised by that game.
 
-### 4.3 Skip targets (SKIPTO): run_action (demo 0x7937) and the animation runner (demo 0x7f6f)
+### 4.3 Skip targets (ASLT): run_action (demo 0x7937) and the animation runner (demo 0x7f6f)
 v1.02 adds a "skip the rest of this cut-scene" mechanism driven by a key (variable 47, default 1 = Esc scan
 code). B[0xdc] is the last scan code delivered by the keyboard ISR (unchanged), the same byte the main loop
 tests for SPACE.
@@ -143,7 +160,7 @@ tests for SPACE.
 run_action, default branch (real scripts, `fcc9` not in 100..106):
 ```
 if fcc9 == 0: return
-if W[SKIP_TARGET] != -1:                               // set by SKIPTO in an action (or ACTION 0)
+if W[SKIP_TARGET] != -1:                               // set by ASLT in an action (or ACTION 0)
     if B[0xdc] == W[var47]:  fcca = (u8)W[SKIP_TARGET]; B[0xdc] = 0
     if (i16)(u16)fcca >= W[SKIP_TARGET]:               // reached or jumped past the label
         W[SKIP_TARGET] = -1
@@ -193,7 +210,7 @@ Variables 0..46 point at the same globals as in the demo (relocated), **except 2
 | 31 | fcfe (byte) | fc02 (word) | inventory opening enabled | 1 |
 | 32 | fd03 (byte) | fc0c (word) | right-click verb change enabled | 1 |
 | 47 | — | face | scan code of the skip key (§4.3) | 1 (Esc) |
-| 48 | — | faca | result of ISANIM (op 69) | 0 |
+| 48 | — | faca | result of SEEANIM (op 69) | 0 |
 | 49 | (= fcce) | fbd2 | player walking flag (the demo's fcce, now visible) | — |
 | 50 | — | fabf | number of verbs cycled by right-click (§4.7) | 5 |
 | 51 | — | fac3 | inventory "look" verb (demo hard-codes 1) | 1 |
@@ -285,7 +302,44 @@ that would detect it. The Rust engine's own save format must add: the 12-byte an
 47..54, SKIP_TARGET, RAND_COUNTER, INV_VERB and the 10-cursor table.
 
 ---------------------------------------------------------------------------------------------------
-## 5. DS address map (selected)
+## 5. Shareware v1.03 (PCManía 67) vs v1.02
+
+The v2.02 shareware kit's runtime. Its DS is at image paragraph 0x12d1 (Dadton's 0x12b1); the code is v1.02's with
+these changes (aligned diff of the two unpacked images, every block read):
+
+1. **Shareware again**: the "level > 5 / ≥ 6" checks (fatal 0xc8) and the start-up nag screen are back, and the
+   level number is a byte again (DS 0xfd4e, previous level 0xfd4f) — as in the shareware v1.0. The Rust engine
+   does not enforce the shareware limits for any build.
+2. **Level files**: the shareware block sequence *with* the single filler bytes, and the v1.02 0x258-byte
+   ANIMS block (12-byte records, skip word at +0x0a). Every other block is as in the shareware v1.0 (checked by
+   tracing the loader's reads: level 0 of the demo consumes 2644 bytes, header included, before its offset tables).
+3. **16-bit program counters**. The interpreter (v1.03 0x2ca7) reads `code[base + W[pc]]` — the pc is a word,
+   not a byte — and every pc update is a word operation (`add word [pc], n`, `inc word [pc]`, `mov word [pc],
+   0`). Jumps (JMP/JE/…/JAE) store the **whole** target word (v1.02 and older store its low byte only, so
+   scripts were limited to 256 words). The ASLT skip target and the animation-runner skip
+   (`ANIM.pc = ANIM.skip`) were already words.
+   * The current action's pc moves to a word (v1.03 DS 0xfd7c; v1.02 kept a byte at 0xfbce with the compare flag
+     right after it); the action's compare flag moves to 0xfd7e. Every place that resets or tests the action
+     pc (level change, door placement, run_action's verb states 100–106, MOUSEACTION, ACTION, the level-0
+     loop) does so on the word. The pseudo-action sub-states are unchanged.
+   * Animation records keep pc at +4 (now read as a word; it was a word already in the record) and the flag at
+     +6.
+4. Nothing else changes: the same 69 opcodes with the same semantics (op handlers compared one by one; e.g.
+   NEWTHING's helper is reached with a `jmp` instead of a `call`), the same 200-command limit, RAND, variables
+   47–54, cursor and inventory behaviour, savegame layout apart from the level byte.
+
+Validation: the rebuilt demo plays to its ending in the Rust engine with the v2.0 demo's walkthrough
+(`tests/game.rs` `demo103_plays_to_the_end`, t = 163456 ms against 162944 for the v2.0 demo). Against the
+original v1.03 in the unicorn emulator: the new introduction (level 5 ACTION 9, five SPEAKs inside
+`ASLT FINPRESENTA; … FINPRESENTA:`) shows the same lines pixel for pixel (apart from the cursor), and pressing
+the skip key (var 47 = Esc) during it ends it at once in both. The original reaches level 5 a few seconds later
+because its FLI intro is paced by the CPU. ED.EXE v2.02's output for the demo's scripts is reproduced word for
+word by the Rust compiler, ASLT included (`demo103_scripts_match_ed_exe`, 55 scripts).
+
+The rebuilt demo's sources differ from the v2.0 demo's only in MOUSE.ED (10 cursor rows) and ROOM5.ED (the
+introduction, `DOOR(0,160,100,2,9)` to run it on arrival, texts 22–26).
+
+## 6. DS address map (selected)
 
 Demo address → same object in the other builds, taken from the loaders, the savegame block lists and the
 aligned code (exact). Useful to read the original code; the Rust engine keeps the demo layout.
@@ -331,7 +385,7 @@ inventory_frame 0xb4e3 → 0xb38c → 0xb599; MENU 0x9ae1 → 0x99a5 → 0x9b99;
 hw_init 0xa5d5 → 0xa499 → 0xa6a4; ISR 0x3dc5 → 0x3d41 → 0x3e13; savegame blocks 0x9693 → 0x9557 → 0x974b.
 
 ---------------------------------------------------------------------------------------------------
-## 6. Implementation notes for the Rust engine (proposals)
+## 7. Implementation notes for the Rust engine (proposals)
 
 * **Variant flag** in the engine (`Shareware | Registered | V102`), chosen as in §1. Shareware and Registered
   behave the same at run time (the engine never enforced the shareware limits); only the loader differs
@@ -361,6 +415,6 @@ Side findings about the demo build (outside this document's scope, for whoever o
   after the palette, which differs for objects ≥ 27 (no shipped game reaches it: demo 11 objects, Nauru 27,
   i.e. 0..26).
 
-## 7. Uncertain
+## 8. Uncertain
 * Names of ops 18/67/68/69 and the intent of op 67 (the registered ED.EXE is not available).
 * Whether registered ED.EXE versions also produce loose NIVEL.nnn files without filler bytes (not seen).

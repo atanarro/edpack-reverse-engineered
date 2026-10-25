@@ -5,7 +5,7 @@
 //! NAME(args);                       definition or command
 //! ACTION n / ANIMATION n / THING n / OBJINV / DEFMOV(S) / DEFMOUSE ... END;
 //! IF(a .op. b) ... [ELSE ...] ENDIF   WHILE(a .op. b) ... ENDWHILE
-//! LABEL:   JMP LABEL;  (and JE/JNE/JL/JA/JLE/JAE)
+//! LABEL:   JMP LABEL;  (and JE/JNE/JL/JA/JLE/JAE, and ASLT LABEL; from v2.02)
 //! ```
 //! Source text is a byte string in DOS code page 850.
 
@@ -129,7 +129,8 @@ pub enum Item {
 }
 
 const CONDS: [&str; 6] = ["E", "NE", "L", "LE", "A", "AE"];
-const JUMPS: [&str; 7] = ["JMP", "JE", "JNE", "JL", "JA", "JLE", "JAE"];
+/// Statements taking a label: the jumps, and ASLT (EDPACK v2.02: skip to the label on a key press).
+const JUMPS: [&str; 8] = ["JMP", "JE", "JNE", "JL", "JA", "JLE", "JAE", "ASLT"];
 
 struct Parser<'a> {
     toks: Vec<Token>,

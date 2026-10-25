@@ -62,19 +62,19 @@ pub enum LevelFormat {
     /// 12-byte animation records.
     V102,
     /// Shareware v2.02 with RUNDAT.EXE v1.03 (the demo on PCManía 67): filler
-    /// bytes like the shareware, 12-byte animation records and the v1.02
-    /// commands.
-    SharewareV102,
+    /// bytes like the shareware, 12-byte animation records, the v1.02
+    /// commands, and 16-bit program counters.
+    SharewareV103,
 }
 
 impl LevelFormat {
     /// In detection order: the v1.02 layouts must be tried before the ones
     /// they extend, since old-layout parses of new data can still fit.
     pub const ALL: [LevelFormat; 4] =
-        [LevelFormat::SharewareV102, LevelFormat::Shareware, LevelFormat::Registered, LevelFormat::V102];
+        [LevelFormat::SharewareV103, LevelFormat::Shareware, LevelFormat::Registered, LevelFormat::V102];
 
     fn fillers(self) -> bool {
-        matches!(self, LevelFormat::Shareware | LevelFormat::SharewareV102)
+        matches!(self, LevelFormat::Shareware | LevelFormat::SharewareV103)
     }
 
     /// Size of one ANIMATION record.
@@ -82,9 +82,14 @@ impl LevelFormat {
         if self.is_v102() { 12 } else { 10 }
     }
 
-    /// Made for the v1.02 runtime (skip key, PUTXY, SEEANIM...).
+    /// Made for the v1.02 runtime or later (skip key, PUTXY, SEEANIM...).
     pub fn is_v102(self) -> bool {
-        matches!(self, LevelFormat::V102 | LevelFormat::SharewareV102)
+        matches!(self, LevelFormat::V102 | LevelFormat::SharewareV103)
+    }
+
+    /// RUNDAT v1.03: scripts' program counters are 16-bit words.
+    pub fn wide_pc(self) -> bool {
+        self == LevelFormat::SharewareV103
     }
 }
 

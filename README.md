@@ -5,10 +5,11 @@ Moreno, 1990s), the Spanish DOS toolkit for point-and-click graphic adventures. 
 games made with the DOS versions natively, both EDPACK v1 (`RUNVGA.EXE`) and EDPACK v2.0x
 (`RUNDAT.EXE`, shareware and registered runtimes), and it replaces the v2 DOS-only toolchain.
 
-It is based on the shareware version of the Editor de Aventuras Gráficas (EDPACK) v2.02. That
-version was distributed for free on the CD-ROM included with *PCManía* magazine issue 67 (May
-1998), in the folder `sharewar\varios\edpack20\JUEGO`
-([ISO image](https://archive.org/download/PCMCDS/PCMania%20CD67_1.iso)).
+It is based on the shareware versions of the Editor de Aventuras Gráficas (EDPACK), which were
+distributed for free on Spanish magazine cover CDs: v2.0 on *Micromanía* CD 35 (folder `ED`), and
+v2.02 on *PCManía* issue 67 (May 1998), in the folder `sharewar\varios\edpack20`
+([ISO image](https://archive.org/download/PCMCDS/PCMania%20CD67_1.iso)). The EDPACK v1 demo is on
+*Micromanía* CD 21 (folder `EDPACK`).
 
 | Original (DOS) | Replacement | What it does |
 |---|---|---|
@@ -24,9 +25,12 @@ Games known to work, each played to its ending by the test suite:
 | Game | Made with | Interpreter |
 |---|---|---|
 | *Peter's Adventure I* (the demo) | EDPACK v2.0 shareware | `RUNDAT.EXE` v1.0 shareware |
+| *Peter's Adventure I*, *PCManía* 67 build | EDPACK v2.02 shareware | `RUNDAT.EXE` v1.03 shareware |
 | *El Dios de Nauru* (BYK Software, 2001) | EDPACK v2.03 | `RUNDAT.EXE` v1.0 registered |
 | *Dadton Aguinández* (Coctel Software, 1998) | EDPACK v2.02 | `RUNDAT.EXE` v1.02 |
 | *Las Aventuras de Manolo Kabezabolo* (Digital Legion, 1997) | EDPACK v1 | `RUNVGA.EXE` v1.03 |
+
+The EDPACK v1 demo (`RUNVGA.EXE` v1.0) also plays; it has no walkthrough test.
 
 The variant is detected from the data. See [`docs/history.md`](docs/history.md)
 for the versions; the Windows rewrite EDPACK 2000 is a different program and is not supported.
@@ -107,6 +111,8 @@ They play the demo to the end three ways: from the original `EDGAME.DAT`, from t
 from an `EDGAME.DAT` built by `edc --pack`. They check that all three runs end at the same
 simulated moment, and that the compiler's output matches the original ED.EXE's.
 
+The *PCManía* 67 build of the demo is tested with `EDPACK_DEMO103_DAT` (its `EDGAME.DAT`) and
+`EDPACK_DEMO103_SRC` (its `FUENTES` folder, compiled and compared with the original ED.EXE v2.02).
 Other games are played to their endings when given: `EDPACK_NAURU_DAT` and `EDPACK_DADTON_DAT`
 name the `EDGAME.DAT` of *El Dios de Nauru* and *Dadton Aguinández*, and `EDPACK_MANOLO` the folder with the `RESOURCE.DAT` of *Las Aventuras
 de Manolo Kabezabolo* (EDPACK v1). Tests whose variables are not set are skipped.
@@ -147,7 +153,7 @@ many seconds and quits.
   to what the original ED.EXE produced for the demo.
 - **v2 runtime variants** (`level.rs`, `dat.rs`). The registered archives have 1000 level slots,
   the registered level files lack the shareware's filler bytes, and RUNDAT v1.02 has 12-byte
-  animation records, a skip key, PXY/ISANIM, a 200-operation limit and some UI changes. The
+  animation records, a skip key (ASLT/DSLT), PUTXY/SEEANIM, a 200-operation limit and some UI changes. The
   layout is detected by parsing the levels each way. Details: `docs/v2-rundat/07-versions.md`.
 - **EDPACK v1** (`v1/`). A separate engine for RUNVGA.EXE: its own data segment layout, the raw
   level tables of `RESOURCE.DAT`, the 41-opcode interpreter, the walker, the verbless click

@@ -89,14 +89,14 @@ pub mod v102 {
     use super::EXT_BASE;
     /// 50 x i16: the animations' skip targets (record word +0x0a), -1 = none.
     pub const ANIM_SKIP: usize = EXT_BASE;
-    /// i16: skip target of the running action (SKIPTO outside animations).
+    /// i16: skip target of the running action (ASLT outside animations).
     pub const SKIP_TARGET: usize = EXT_BASE + 100;
     /// u8: cycles 0..100 at 50 Hz, read by RAND.
     pub const RAND_COUNTER: usize = EXT_BASE + 102;
     /// u8: the verb last used inside the inventory panel.
     pub const INV_VERB: usize = EXT_BASE + 103;
     pub const VAR47_SKIP_KEY: usize = EXT_BASE + 104;
-    pub const VAR48_ISANIM: usize = EXT_BASE + 106;
+    pub const VAR48_SEEANIM: usize = EXT_BASE + 106;
     pub const VAR50_VERBS: usize = EXT_BASE + 108;
     pub const VAR51_LOOK: usize = EXT_BASE + 110;
     pub const VAR52_USE: usize = EXT_BASE + 112;
@@ -110,6 +110,9 @@ pub mod v102 {
     pub const VAR32_VERBS: usize = EXT_BASE + 126;
     /// cursor table entries 6..9 (12 bytes each; 0..5 stay at the demo's table).
     pub const CURSORS_6_9: usize = EXT_BASE + 128;
+    /// u8: RUNDAT v1.03's action compare flag (its u16 action pc occupies the
+    /// demo's flag byte after CUR_ACTION_PC).
+    pub const ACTION_FLAG_V103: usize = EXT_BASE + 176;
 }
 
 #[derive(Clone)]
@@ -153,7 +156,7 @@ impl Memory {
         v[31] = v102::VAR31_INV;
         v[32] = v102::VAR32_VERBS;
         v[47] = v102::VAR47_SKIP_KEY;
-        v[48] = v102::VAR48_ISANIM;
+        v[48] = v102::VAR48_SEEANIM;
         v[49] = 0xfcce;
         v[50] = v102::VAR50_VERBS;
         v[51] = v102::VAR51_LOOK;

@@ -9,7 +9,9 @@
 //!
 //! Other games, played to their endings when their EDGAME.DAT is given:
 //! EDPACK_NAURU_DAT for "El Dios de Nauru" (registered EDPACK v2.03),
-//! EDPACK_DADTON_DAT for "Dadton Aguinández" (RUNDAT v1.02).
+//! EDPACK_DADTON_DAT for "Dadton Aguinández" (RUNDAT v1.02), and
+//! EDPACK_DEMO103_DAT for the demo as rebuilt for the EDPACK v2.02 shareware
+//! kit (PCManía 67, RUNDAT v1.03), with EDPACK_DEMO103_SRC for its sources.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -216,4 +218,54 @@ fn dadton_plays_to_the_end() {
     h.run(&script).unwrap_or_else(|e| panic!("{e}"));
     assert!(h.exited(), "the game ends with EXIT after the credits");
     assert_eq!(h.var(1017), 2, "two pirates joined the crew");
+}
+
+fn demo103() -> Option<(PathBuf, PathBuf)> {
+    let (dat, src) = (env_path("EDPACK_DEMO103_DAT"), env_path("EDPACK_DEMO103_SRC"));
+    if !dat.is_file() {
+        eprintln!("skipped: set EDPACK_DEMO103_DAT to the v2.02 shareware demo's EDGAME.DAT (PCManía 67)");
+        return None;
+    }
+    Some((dat, src))
+}
+
+#[test]
+fn demo103_plays_to_the_end() {
+    let Some((dat, _)) = demo103() else { return };
+    let game = Game::open(&dat).unwrap();
+    assert_eq!(game.level_format(), LevelFormat::SharewareV103);
+    // the same solution as the v2.0 demo: the rebuilt game only adds an
+    // introduction (skippable with ASLT) and four more cursors
+    play(game);
+}
+
+#[test]
+fn demo103_scripts_match_ed_exe() {
+    let Some((dat, src)) = demo103() else { return };
+    if !src.is_dir() {
+        eprintln!("skipped: set EDPACK_DEMO103_SRC to the v2.02 demo's FUENTES folder");
+        return;
+    }
+    let arc = GameArchive::new(std::fs::read(&dat).unwrap());
+    let mut checked = 0;
+    for l in 0..=5 {
+        let items = parse_ed(&std::fs::read(src.join(format!("ROOM{l}.ED"))).unwrap(), "room").unwrap();
+        let mut mem = Memory::new();
+        let code =
+            load_level(&mut mem, &arc.bytes, arc.level_offset(l), true, LevelFormat::SharewareV103).unwrap().code;
+        for it in &items {
+            let Item::Block { kind, n, body, .. } = it else { continue };
+            let base = match kind.as_str() {
+                "ACTION" => mem.i16(ds::ACTION_OFFS + *n as usize * 2),
+                "ANIMATION" => mem.i16(ds::ANIMS + *n as usize * 10 + 2),
+                _ => continue,
+            } as usize;
+            let words = compile_script(body, "room").unwrap();
+            let orig: Vec<i32> = code[base..base + words.len()].iter().map(|&w| w as i32).collect();
+            assert_eq!(orig, words, "level {l} {kind} {n}");
+            checked += 1;
+        }
+    }
+    // the v2.0 demo's 54 scripts plus the new ACTION 9 of level 5 (with ASLT)
+    assert_eq!(checked, 55);
 }
