@@ -1,4 +1,4 @@
-//! EDPACK v1 (RUNVGA.EXE) tests with "Las Aventuras de Manolo Kabezabolo".
+//! EDPACK v1 (RUNVGA.EXE) tests with "Las Aventuras de Manolo Kabezabolo" and the v1 demo.
 //! The game is not part of this repository: set EDPACK_MANOLO to its folder
 //! (the one with RESOURCE.DAT), otherwise these tests are skipped.
 
@@ -114,4 +114,20 @@ fn save_and_load_through_the_space_menu() {
     // SPACE, "Cargar", first slot
     h.run("key 57; wait 1500; tap 240 54; wait 1000; tap 100 31; wait 4000; waitidle").unwrap();
     assert_eq!(h.state_core(), saved);
+}
+
+/// The EDPACK v1 demo (RUNVGA v1.0, 12-byte LIMIT records): set EDPACK_V1DEMO
+/// to its folder.
+#[test]
+fn v1_demo_plays_to_the_end() {
+    let Some(dir) = std::env::var_os("EDPACK_V1DEMO").map(PathBuf::from) else { return };
+    let src = Source::open(&dir).expect("EDPACK_V1DEMO does not point to a v1 game");
+    assert_eq!(src.version(), data::Version::V100);
+    let script =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/walkthrough/v1demo.txt"))
+            .unwrap();
+    let opts = edpack::v1::Options::from_setup_cfg(&dir).unwrap_or_default();
+    let mut h = Harness::with_options(src, opts).unwrap();
+    h.run(&script).unwrap_or_else(|e| panic!("{e}"));
+    assert!(h.exited(), "the demo should end with EXIT after the order form");
 }

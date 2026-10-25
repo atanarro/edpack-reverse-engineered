@@ -1,0 +1,57 @@
+# Full solution of the EDPACK v1 demo (Omega Works, 1996, RUNVGA.EXE v1.0).
+# Derived from the level scripts. Left click looks, right click does what the
+# thing is set up for, and use <obj> <target> = right-click the object, then
+# left-click the target. Several things share a name, so some are clicked by
+# position.
+
+# Intro (level 0): three pictures (Omega Works logo, controls, memory), each waits for a click
+wait 3000
+tap 160 100
+wait 3000
+tap 160 100
+wait 3000
+tap 160 100
+wait 3000
+waitidle
+expect level 2
+
+# Hallway (2): the key to the bedroom is behind the "Luna y estrellas" picture
+rclick 289 66
+expect inv Llave
+# the neighbours' door: knock, and they send him away
+rclick 239 89
+use Llave 97 90
+expect level 1
+
+# Bedroom (1): the wardrobe opens and closes, the TV and the bed only talk
+rclick Armario
+expect var 1000 1
+rclick Armario
+expect var 1000 0
+rclick Televisor
+rclick Cama
+# the poster is a full-screen picture that waits for a click
+rtap Poster
+wait 6000
+tap 160 100
+wait 3000
+waitidle
+# the wallet: take it, leave it on the bed, take it again
+rclick Cartera
+expect inv Cartera
+expect var 1001 1
+use Cartera Cama
+expect noinv Cartera
+expect var 1001 0
+rclick Cartera
+expect inv Cartera
+rclick Puerta
+expect level 2
+
+# The exit (level 3): the order form, then back to DOS
+rtap 315 117
+wait 8000
+expect level 3
+tap 160 100
+wait 3000
+expect exited

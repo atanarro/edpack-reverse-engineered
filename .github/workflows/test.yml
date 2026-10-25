@@ -1,0 +1,39 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libx11-dev libxkbcommon-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      # The shareware kits are not part of the repository: they are assets of the
+      # "test-assets" release. Without them the end-to-end tests are skipped.
+      - name: Download the shareware games
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p assets
+          if gh release download test-assets -p '*.zip' -D assets; then
+            for z in assets/*.zip; do unzip -q "$z" -d assets; done
+          else
+            echo "no test-assets release: end-to-end tests will be skipped"
+          fi
+      - name: Clippy
+        run: cargo clippy --release --all-targets -- -D warnings
+      - name: Tests
+        env:
+          EDPACK_V1DEMO: ${{ github.workspace }}/assets/edpack-v1-demo
+          EDPACK_DEMO_DAT: ${{ github.workspace }}/assets/edpack-v2.0-shareware/DEMO/EDGAME.DAT
+          EDPACK_DEMO_SRC: ${{ github.workspace }}/assets/edpack-v2.0-shareware/FUENTES
+          EDPACK_DEMO103_DAT: ${{ github.workspace }}/assets/edpack-v2.02-shareware/JUEGO/EDGAME.DAT
+          EDPACK_DEMO103_SRC: ${{ github.workspace }}/assets/edpack-v2.02-shareware/JUEGO/FUENTES
+        run: cargo test --release

@@ -638,11 +638,31 @@ impl Engine {
         self.src.resource(&name, off, size).ok_or_else(|| String::from_utf8_lossy(&name).into_owned())
     }
 
-    /// Load graphics slot `slot` from its name/offset entry; returns false if missing.
+    /// Bytes of the picture named by FILE entry n (SHOWPCX, LOADPCX).
+    fn file_pcx(&self, n: i32) -> Result<Vec<u8>, String> {
+        if !(0..20).contains(&n) {
+            return Err(String::new());
+        }
+        let (name, _, _) = data::file_entry(&self.mem, n as usize);
+        self.pcx_bytes(&name).ok_or_else(|| String::from_utf8_lossy(&name).into_owned())
+    }
+
+    /// Bytes of the picture called `name`, found by name as the PCX loader does.
+    fn pcx_bytes(&self, name: &[u8]) -> Option<Vec<u8>> {
+        let label = String::from_utf8_lossy(name).into_owned();
+        let (off, size) = if self.src.is_archive_mode() {
+            data::pcx_entry(&self.mem, name).unwrap_or_else(|| self.fatal(0x63, &label))
+        } else {
+            (0, 0)
+        };
+        self.src.resource(name, off, size)
+    }
+
+    /// Load graphics slot `slot` from the picture its name entry names.
     pub fn load_sheet(&mut self, slot: usize, fatal_missing: u32) {
-        let (name, off, size) = data::gfx_entry(&self.mem, slot);
+        let (name, _, _) = data::gfx_entry(&self.mem, slot);
         let label = String::from_utf8_lossy(&name).into_owned();
-        let Some(bytes) = self.src.resource(&name, off, size) else { self.fatal(fatal_missing, &label) };
+        let Some(bytes) = self.pcx_bytes(&name) else { self.fatal(fatal_missing, &label) };
         match data::decode_pcx(&bytes) {
             Ok((pix, pal)) => {
                 self.sheets[slot] = pix;
@@ -655,7 +675,7 @@ impl Engine {
     /// LOADPCX(file, slot).
     fn load_pcx(&mut self, file: i32, slot: i32) {
         if (0..4).contains(&slot) {
-            let bytes = self.file_bytes(file).unwrap_or_else(|n| self.fatal(0x6e, &n));
+            let bytes = self.file_pcx(file).unwrap_or_else(|n| self.fatal(0x6e, &n));
             let s = slot as usize;
             match data::decode_pcx(&bytes) {
                 Ok((pix, pal)) => {
@@ -690,7 +710,7 @@ impl Engine {
         let saved = self.mem.i16(g::CURSOR_STATE);
         self.mem.set16(g::CURSOR_STATE, 2);
         self.fade_out();
-        let bytes = self.file_bytes(file).unwrap_or_else(|n| self.fatal(0x68, &n));
+        let bytes = self.file_pcx(file).unwrap_or_else(|n| self.fatal(0x68, &n));
         let (pix, pal) = data::decode_pcx(&bytes).unwrap_or_else(|c| self.fatal(c, ""));
         self.vga.copy_from_slice(&pix);
         let pal6: Vec<u8> = pal.iter().map(|v| v / 4).collect();

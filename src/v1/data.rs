@@ -273,6 +273,12 @@ pub fn gfx_entry(m: &Memory, n: usize) -> (Vec<u8>, usize, usize) {
     (m.cstr(ds::GFX_NAMES + n * 13, 13), m.u32(ds::GFX_TAB + n * 8) as usize, m.u32(ds::GFX_TAB + n * 8 + 4) as usize)
 }
 
+/// Where a picture called `name` is stored (0xc2e): the first FILE entry with that
+/// name, else the first graphics slot with it (case-sensitive, like strcmp).
+pub fn pcx_entry(m: &Memory, name: &[u8]) -> Option<(usize, usize)> {
+    (0..20).map(|i| file_entry(m, i)).chain((0..4).map(|i| gfx_entry(m, i))).find(|e| e.0 == name).map(|e| (e.1, e.2))
+}
+
 /// A 320x200 picture and its 8-bit palette, decoded like 0xa3e: runs (byte
 /// > 0xC0) may cross row ends, the palette follows the pixel data.
 pub fn decode_pcx(bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), u32> {

@@ -29,8 +29,7 @@ Games known to work, each played to its ending by the test suite:
 | *El Dios de Nauru* (BYK Software, 2001) | EDPACK v2.03 | `RUNDAT.EXE` v1.0 registered |
 | *Dadton Aguinández* (Coctel Software, 1998) | EDPACK v2.02 | `RUNDAT.EXE` v1.02 |
 | *Las Aventuras de Manolo Kabezabolo* (Digital Legion, 1997) | EDPACK v1 | `RUNVGA.EXE` v1.03 |
-
-The EDPACK v1 demo (`RUNVGA.EXE` v1.0) also plays; it has no walkthrough test.
+| The EDPACK v1 demo (Omega Works, 1996) | EDPACK v1 | `RUNVGA.EXE` v1.0 |
 
 The variant is detected from the data. See [`docs/history.md`](docs/history.md)
 for the versions; the Windows rewrite EDPACK 2000 is a different program and is not supported.
@@ -115,7 +114,7 @@ The *PCManía* 67 build of the demo is tested with `EDPACK_DEMO103_DAT` (its `ED
 `EDPACK_DEMO103_SRC` (its `FUENTES` folder, compiled and compared with the original ED.EXE v2.02).
 Other games are played to their endings when given: `EDPACK_NAURU_DAT` and `EDPACK_DADTON_DAT`
 name the `EDGAME.DAT` of *El Dios de Nauru* and *Dadton Aguinández*, and `EDPACK_MANOLO` the folder with the `RESOURCE.DAT` of *Las Aventuras
-de Manolo Kabezabolo* (EDPACK v1). Tests whose variables are not set are skipped.
+de Manolo Kabezabolo* (EDPACK v1), and `EDPACK_V1DEMO` the folder of the EDPACK v1 demo. Tests whose variables are not set are skipped.
 
 For debugging, `EDPACK_SNAPSHOT=<seconds>:<file.png> edpack ...` saves the window after that
 many seconds and quits.
