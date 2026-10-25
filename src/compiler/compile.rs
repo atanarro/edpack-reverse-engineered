@@ -444,7 +444,7 @@ fn compile_movs(items: &[Item]) -> Vec<u8> {
         let mut e = Buf::new(0x1a0);
         e.w16(0, v.first().copied().unwrap_or(0));
         e.w16(2, v.get(1).copied().unwrap_or(0));
-        let mut pts: Vec<(i32, i32)> = v[2.min(v.len())..].chunks_exact(2).map(|c| (c[0], c[1])).collect();
+        let mut pts: Vec<(i32, i32)> = v[2.min(v.len())..].as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect();
         if pts.last().is_none_or(|p| p.0 != -100) {
             pts.push((-100, -100));
         }

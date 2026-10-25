@@ -223,7 +223,7 @@ impl Engine {
             return false;
         }
         self.mem.bytes.copy_from_slice(&body[..size]);
-        self.code = body[size..].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        self.code = body[size..].as_chunks::<2>().0.iter().map(|&c| i16::from_le_bytes(c)).collect();
         for s in 0..4 {
             self.load_sheet(s, 0x6e);
         }

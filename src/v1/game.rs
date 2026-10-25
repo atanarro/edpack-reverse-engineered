@@ -880,7 +880,7 @@ impl Engine {
             }
             s.extend(&name);
             // QUIRK: " & " uses the full glyph widths
-            for c in [b' ', b'&', b' '] {
+            for c in *b" & " {
                 w += self.font.size(c).0;
             }
             s.extend(b" & ");

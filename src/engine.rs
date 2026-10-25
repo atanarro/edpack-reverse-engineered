@@ -1679,7 +1679,7 @@ impl Engine {
                     self.code = l.code;
                     if self.v102 {
                         // the skip targets: word +0x0a of each 12-byte record
-                        for (i, r) in l.anims.chunks_exact(12).enumerate() {
+                        for (i, r) in l.anims.as_chunks::<12>().0.iter().enumerate() {
                             self.mem.set16(v102::ANIM_SKIP + 2 * i, i16::from_le_bytes([r[10], r[11]]) as i32);
                         }
                     }
@@ -2266,7 +2266,7 @@ impl Engine {
         if parts[0] != self.title || parts[3].len() != self.mem.bytes.len() {
             return None;
         }
-        let code = parts[4].chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        let code = parts[4].as_chunks::<2>().0.iter().map(|&c| i16::from_le_bytes(c)).collect();
         Some(SaveData { name: parts[1].clone(), music: parts[2].clone(), mem: parts[3].clone(), code })
     }
 

@@ -153,10 +153,10 @@ impl FliDecoder {
                 }
             }
             12 => {
-                let mut y = self.w(p);
+                let first = self.w(p);
                 let lines = self.w(p + 2);
                 p += 4;
-                for _ in 0..lines {
+                for y in (first..).take(lines) {
                     let mut x = 0;
                     let packets = self.b(p);
                     p += 1;
@@ -180,7 +180,6 @@ impl FliDecoder {
                             }
                         }
                     }
-                    y += 1;
                 }
             }
             7 => {
