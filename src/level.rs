@@ -50,17 +50,53 @@ pub const DATA_KINDS: [(usize, usize); 7] = [
     (ds::DEFFRAMES, 0xa28),
 ];
 
+/// The compiled-level layouts written by the different ED.EXE versions.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum LevelFormat {
+    /// Shareware v2.0 (the demo): single filler bytes between some blocks.
+    #[default]
+    Shareware,
+    /// Registered v2.0 (RUNDAT.EXE v1.0, e.g. El Dios de Nauru): no filler bytes.
+    Registered,
+    /// Registered v2.0 with RUNDAT.EXE v1.02 (e.g. Dadton): no filler bytes,
+    /// 12-byte animation records.
+    V102,
+}
+
+impl LevelFormat {
+    pub const ALL: [LevelFormat; 3] = [LevelFormat::Shareware, LevelFormat::Registered, LevelFormat::V102];
+
+    fn fillers(self) -> bool {
+        self == LevelFormat::Shareware
+    }
+
+    /// Size of one ANIMATION record.
+    pub fn anim_size(self) -> usize {
+        if self == LevelFormat::V102 { 12 } else { 10 }
+    }
+}
+
 pub struct LoadedLevel {
     /// 5000 words of bytecode.
     pub code: Vec<i16>,
+    /// The ANIMATION table as stored (50 records of [`LevelFormat::anim_size`] bytes).
+    pub anims: Vec<u8>,
     /// Number of bytes consumed from the start of the file.
     pub end: usize,
+    /// Some RLE block did not end on a token boundary (wrong [`LevelFormat`]).
+    pub overrun: bool,
 }
 
 /// Load the level at `offset` of `bytes` into memory.  `packed` is false for
 /// loose NIVEL.nnn files (RUNFILES.EXE), which lack the trailing resource
 /// offset tables.  Strings are decrypted in place.
-pub fn load_level(mem: &mut Memory, bytes: &[u8], offset: usize, packed: bool) -> Result<LoadedLevel, Error> {
+pub fn load_level(
+    mem: &mut Memory,
+    bytes: &[u8],
+    offset: usize,
+    packed: bool,
+    format: LevelFormat,
+) -> Result<LoadedLevel, Error> {
     let mut r = ByteReader::new(bytes, offset);
     let h = r.header()?;
     if h.major < 2 {
@@ -72,10 +108,20 @@ pub fn load_level(mem: &mut Memory, bytes: &[u8], offset: usize, packed: bool) -
         return Err(Error::new("Archivo 'NIVEL.???' no es del tipo correcto."));
     }
     let mut code = vec![0i16; 5000];
+    let mut anims = Vec::new();
     for b in &LEVEL_BLOCKS {
         match *b {
             Block::Skip => {
-                r.byte()?;
+                if format.fillers() {
+                    r.byte()?;
+                }
+            }
+            Block::To(ds::ANIMS, _) => {
+                anims = r.rle(50 * format.anim_size())?;
+                for i in 0..50 {
+                    let rec = &anims[i * format.anim_size()..];
+                    mem.write(ds::ANIMS + i * 10, &rec[..10]);
+                }
             }
             Block::Code => {
                 let data = r.rle(0x2710)?;
@@ -89,7 +135,9 @@ pub fn load_level(mem: &mut Memory, bytes: &[u8], offset: usize, packed: bool) -
             }
         }
     }
-    r.byte()?; // the skip after SELECTEXT
+    if format.fillers() {
+        r.byte()?; // the skip after SELECTEXT
+    }
     // Five fixed messages (slot 1 NOACINVINV, 2 NOACINVOBJ, 4 YESACINVINV).
     for i in 0..5 {
         let mut m = r.rle(250)?;
@@ -123,7 +171,31 @@ pub fn load_level(mem: &mut Memory, bytes: &[u8], offset: usize, packed: bool) -
     for i in 0..25 {
         mem.set8(ds::DRAWANIM_TAB + i * 20 + 0xd, 0);
     }
-    Ok(LoadedLevel { code, end: r.pos })
+    Ok(LoadedLevel { code, anims, end: r.pos, overrun: r.overrun })
+}
+
+/// Work out which [`LevelFormat`] a game's levels use: the one under which
+/// every level parses with each RLE block ending on a token boundary and, for
+/// packed games, every resource offset table points inside the archive (for
+/// loose files, each file is consumed exactly).
+pub fn detect_format<'a>(levels: impl Iterator<Item = (&'a [u8], usize)> + Clone, packed: bool) -> LevelFormat {
+    let fits = |format: LevelFormat| {
+        levels.clone().all(|(bytes, off)| {
+            let mut mem = Memory::new();
+            let Ok(l) = load_level(&mut mem, bytes, off, packed, format) else { return false };
+            if l.overrun {
+                return false;
+            }
+            if !packed {
+                return l.end == bytes.len();
+            }
+            let tables = (0..20).map(|i| file_entry(&mem, i)).chain((0..4).map(|i| gfx_entry(&mem, i)));
+            tables
+                .into_iter()
+                .all(|e| e.size == 0 || e.offset.checked_add(e.size).is_some_and(|end| end <= bytes.len()))
+        })
+    };
+    LevelFormat::ALL.into_iter().find(|&f| fits(f)).unwrap_or_default()
 }
 
 fn decrypt_run(mem: &mut Memory, addr: usize, len: usize, key: u8) {

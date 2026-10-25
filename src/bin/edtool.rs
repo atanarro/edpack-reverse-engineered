@@ -29,7 +29,7 @@ fn usage() -> ! {
 
 fn load(mem: &mut Memory, game: &Game, n: usize) -> Result<Option<Vec<i16>>, Error> {
     let Some((b, off)) = game.level(n) else { return Ok(None) };
-    Ok(Some(load_level(mem, b, off, game.is_packed())?.code))
+    Ok(Some(load_level(mem, b, off, game.is_packed(), game.level_format())?.code))
 }
 
 fn main() {
@@ -56,6 +56,10 @@ fn run(game: &str, out: &str, script: &str) -> Result<(), Error> {
         script.to_string()
     };
     std::fs::create_dir_all(out).map_err(|e| Error::new(e.to_string()))?;
+    if let Some(src) = edpack::v1::data::Source::open(Path::new(game)) {
+        let opts = edpack::v1::Options::from_setup_cfg(Path::new(game)).unwrap_or_default();
+        return run_v1(src, opts, out, &script);
+    }
     let mut h = Harness::new(Game::open(Path::new(game))?)?;
     let dir = out.to_string();
     h.on_shot = Some(Box::new(move |name, f| {
@@ -66,6 +70,25 @@ fn run(game: &str, out: &str, script: &str) -> Result<(), Error> {
     }));
     h.log = Box::new(|s| println!("{s}"));
     h.run(&script)?;
+    if h.exited() {
+        println!("el juego terminó en t={}", h.now)
+    } else {
+        println!("{}", h.state())
+    }
+    Ok(())
+}
+
+fn run_v1(src: edpack::v1::data::Source, opts: edpack::v1::Options, out: &str, script: &str) -> Result<(), Error> {
+    let mut h = edpack::v1::harness::Harness::with_options(src, opts)?;
+    let dir = out.to_string();
+    h.on_shot = Some(Box::new(move |name, f| {
+        let path = Path::new(&dir).join(format!("{name}.png"));
+        if let Err(e) = save_png(&path, 320, 200, &f.screen, &f.palette, 2) {
+            eprintln!("{}: {e}", path.display());
+        }
+    }));
+    h.log = Box::new(|s| println!("{s}"));
+    h.run(script)?;
     if h.exited() {
         println!("el juego terminó en t={}", h.now)
     } else {

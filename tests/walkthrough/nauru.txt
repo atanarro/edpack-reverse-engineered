@@ -1,0 +1,418 @@
+# Full solution of "El Dios de Nauru" (BYK Software, 2001, registered EDPACK v2.03),
+# following the game's SOLUCION.DOC. Verbs: 0 Ir a, 1 Mirar, 2 Coger, 3 Usar,
+# 4 Hablar a. Targets are thing names (or @n for thing n) as listed by `look`.
+
+# intro: logos, credits and the book
+wait 20000
+click 160 100
+wait 20000
+click 160 100
+wait 20000
+
+# the town square
+expect level 10
+
+# the boy with the yo-yo, "Hasta luego" ends the talk
+do 4 chaval
+choose 4
+expect var 1066 1
+do 0 calle
+expect level 15
+
+# the Alabama, the town bar: the old man tells about the stolen god and the guru
+do 0 @2
+expect level 17
+do 4 anciano
+choose 2
+choose 1
+choose 4
+expect var 1048 1
+do 0 puerta
+expect level 15
+do 0 plaza
+expect level 10
+
+# money behind the loose brick on the jetty
+do 0 escaleras
+expect level 11
+do 0 embarcadero
+expect level 12
+do 2 ladrillo
+do 2 dinero
+expect inv 9
+expect inv 10
+expect var 1007 3
+do 0 escaleras
+expect level 11
+do 0 plaza
+expect level 10
+do 0 calle
+expect level 15
+do 0 @2
+expect level 17
+
+# pay Mary for a room, then up to it: a Rolex in the drawer
+do 4 mary
+choose 1
+expect var 1038 1
+choose 3
+do 0 escaleras
+expect level 18
+do 0 @3
+expect level 19
+do 1 cajón
+expect inv 0
+do 0 puerta
+expect level 18
+do 0 escaleras
+expect level 17
+do 0 puerta
+expect level 15
+
+# La Pierre: buy the slingshot and the torch with the rest of the money
+do 0 @0
+expect level 16
+do 2 tirachinas
+do 2 linterna
+expect inv 13
+expect inv 20
+do 0 puerta
+expect level 15
+do 0 plaza
+expect level 10
+
+# the island map -> the castle
+do 0 arco
+expect level 9
+do 0 castillo
+expect level 22
+do 0 puerta
+expect level 23
+
+# the pulley in the wardrobe, the wooden key behind the painting
+do 0 armario
+do 2 cuadro
+do 2 polea
+do 2 llave
+expect inv 1
+expect inv 2
+use llave @4
+expect level 24
+
+# the right candelabrum opens the secret stairs
+do 2 @9
+expect var 1026 1
+do 0 escaleras
+expect level 26
+
+# the statue room: the brick on the statue gives pebbles, the kitchen has a bucket
+use ladrillo estatua
+do 2 piedras
+expect inv 14
+do 0 @3
+expect level 34
+do 2 cubo
+expect inv 3
+do 0 puerta
+expect level 26
+do 0 @5
+expect level 28
+
+# the green key between the big doors, the vase over the fireplace
+do 2 llave verde
+expect inv 4
+do 0 @2
+expect level 29
+do 2 jarrón
+expect inv 16
+do 0 puerta
+expect level 28
+do 0 @0
+expect level 26
+
+# the green key opens the well room
+use 4 @1
+expect level 27
+
+# bucket + pulley, into the well: a metal bar, out of the window and up
+combine cubo polea
+expect inv 5
+use 5 pozo
+expect inv 6
+do 3 ventana
+expect var 1030 1
+do 0 ventana
+expect level 30
+do 0 @2
+expect level 31
+
+# the bar opens the chest: pliers
+use barra baúl
+expect var 1036 1
+do 1 baúl
+expect inv 7
+do 0 trampilla
+expect level 27
+do 0 puerta
+expect level 26
+do 0 @0
+expect level 24
+
+# the pliers open the grating: a rat, which goes into the blender (with the vase)
+do 0 entrada
+expect level 33
+use alicates rejilla
+expect var 1033 1
+do 2 rata
+expect inv 8
+do 0 puerta
+expect level 24
+do 0 escaleras
+expect level 26
+do 0 @3
+expect level 34
+use rata licuadora
+expect inv 17
+do 0 puerta
+expect level 26
+do 0 @5
+expect level 28
+do 0 @5
+expect level 32
+
+# the second big door: the rat juice dissolves the ghost guarding the safe
+use 17 espectro
+expect var 1045 1
+do 0 caja
+do 2 llave grande
+expect inv 18
+do 0 puerta
+expect level 28
+do 0 @0
+expect level 26
+do 0 @0
+expect level 24
+do 0 @2
+expect level 25
+
+# the big key frees the guru, who comes back to the square
+use 18 @2
+choose 3
+waitidle
+expect var 1051 1
+expect level 10
+
+# the guru tells about the ring needed to enter the pyramid
+choose 1
+expect var 1053 1
+
+# the abandoned house (orange door): the hook opens the hatch, the torch shows a message
+do 0 puerta
+expect level 13
+do 2 gancho
+expect inv 19
+use gancho tapa
+expect var 1012 1
+do 0 agujero
+expect level 14
+use linterna pared
+expect var 1062 1
+do 0 agujero
+expect level 13
+do 0 puerta
+expect level 10
+do 0 calle
+expect level 15
+do 0 @2
+expect level 69
+
+# the old man translates it: the key to the ring hangs in the forest
+do 4 anciano
+choose 2
+waitidle
+expect level 10
+expect var 1062 2
+do 0 arco
+expect level 9
+
+# the forest (a maze): the blue key in a tree, shot down with the loaded slingshot
+do 0 cruce
+expect level 35
+# The level change reset the verb to "Ir a" but kept the "Hablar a" cursor,
+# whose hot point cannot reach the left edge (as in the original): cycle the
+# verbs once to get the "Ir a" cursor back.
+rclick
+rclick
+rclick
+rclick
+rclick
+do 0 @0
+expect level 36
+do 0 @0
+expect level 37
+do 0 @0
+expect level 38
+do 0 @1
+expect level 50
+do 0 @1
+expect level 45
+do 0 @2
+expect level 44
+do 0 @0
+expect level 43
+combine tirachinas piedras
+expect inv 15
+use 15 llave azul
+expect var 1039 1
+do 2 llave azul
+expect inv 22
+do 0 @1
+expect level 44
+do 0 @1
+expect level 45
+do 0 @1
+expect level 50
+do 0 @0
+expect level 38
+do 0 @2
+expect level 37
+do 0 @1
+expect level 36
+do 0 @2
+expect level 35
+do 0 @1
+expect level 9
+
+# the cemetery: the blue key opens the gate, the bar the middle tomb: glass eye and ring
+do 0 cementerio
+expect level 20
+use 22 puerta
+expect level 21
+use 6 @4
+expect level 53
+do 2 ojo
+expect inv 23
+do 2 anillo
+expect inv 24
+expect level 21
+do 0 salida
+expect level 20
+do 0 salida
+expect level 9
+do 0 cruce
+expect level 35
+rclick
+rclick
+rclick
+rclick
+rclick
+do 0 @0
+expect level 36
+do 0 @0
+expect level 37
+do 0 @0
+expect level 38
+do 0 @0
+expect level 39
+do 0 @1
+expect level 40
+do 0 @1
+expect level 41
+
+# the boy blocks the bridge to the guru's cabin until he gets the Rolex
+use 0 chaval
+expect noinv 0
+do 0 @0
+expect level 42
+do 0 @1
+expect level 51
+do 0 @0
+expect level 52
+
+# the guru's cabin: the glass eye in the cow's head, the guru gives the images of the gods
+do 4 guru
+choose 2
+expect var 1054 1
+use 23 cabeza
+choose 2
+expect inv 21
+choose 3
+do 0 puerta
+expect level 51
+do 0 @1
+expect level 9
+do 0 poblado
+expect level 10
+do 0 calle
+expect level 15
+do 0 @2
+expect level 17
+
+# the old man sees the images, mentions the pyramid walls, and dies
+use 21 anciano
+choose 2
+choose 1
+waitidle
+expect var 1058 1
+expect level 15
+do 0 plaza
+expect level 10
+do 0 arco
+expect level 9
+
+# the pyramid, the wall inscriptions point to the second god
+do 0 pirámide
+expect level 54
+rclick
+rclick
+rclick
+rclick
+rclick
+do 0 @1
+expect level 55
+do 0 @0
+expect level 56
+do 0 @1
+expect level 57
+do 0 @1
+expect level 58
+do 0 @0
+expect level 59
+do 0 @1
+expect level 60
+do 0 @0
+expect level 61
+do 0 @1
+expect level 62
+do 0 @1
+expect level 63
+do 0 @0
+expect level 64
+do 0 @0
+expect level 65
+do 0 @0
+expect level 66
+
+# the ring opens the doors, the second leads to the chamber of the gods
+do 1 anillo
+expect var 1061 1
+expect level 66
+do 0 puerta ii
+do 0 puerta ii
+expect level 67
+
+# take the true god (the second) and leave
+do 2 @2
+expect inv 26
+expect var 1060 1
+do 0 salida
+# the true god: the final scene (level 70), the epilogue and the credits
+# (level 2: two pictures of 30 s and 7 s), then the game opens its menu
+wait 5000
+expect level 2
+expect var 1060 1
+wait 45000
+shot menu
+click 237 81          # SALIR
+key 31                # S
+expect exited

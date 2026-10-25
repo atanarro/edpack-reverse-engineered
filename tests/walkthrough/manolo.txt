@@ -1,0 +1,272 @@
+# Full solution of "Las Aventuras de Manolo Kabezabolo" (Digital Legion, 1997, EDPACK v1).
+# Derived from the level scripts. v1 has no verbs: click = look/use as the thing
+# says, rclick = take/operate, use <obj> <target> = right-click the object, then
+# left-click the target.
+
+# Intro (level 0): five pictures, each waits for a click
+wait 3000
+tap 160 100
+wait 3000
+tap 160 100
+wait 3000
+tap 160 100
+wait 3000
+tap 160 100
+wait 3000
+tap 160 100
+wait 3000
+expect level 35
+click Comenzar
+expect level 1
+expect inv Llavero calavera
+
+# Bedroom (1): the trapera (a knife) is on the table, the metal box in the pillow
+rclick Trapera
+expect inv Trapera
+use Trapera Almohada
+expect inv Caja
+rclick Puerta
+expect level 2
+
+# Hallway (2): a holy card behind the "V" picture
+click Cuadro de la V
+expect inv Estampita
+rclick Escaleras
+expect level 3
+
+# Street (3) -> down to the bar's street (5): a bag of grass on the ground
+rclick Calle pabajo
+expect level 5
+rclick Cosa
+expect inv Bolsa de marihuana
+
+# Cathedral (6): the old woman takes Manolo for her nephew and gives him her keys
+rclick Pórtico
+expect level 6
+use Estampita Vieja
+expect inv Llavero con Rosario
+# she throws him out after a while
+wait 15000
+waitidle
+expect level 5
+
+# The bar (8): Reggae at the counter tells Manolo the news
+rclick Puerta garito
+expect level 8
+rclick Reggae
+# Johnny's room (9) registers the "papela + grass = joint" combination
+rclick Reservado
+expect level 9
+rclick Puerta
+expect level 8
+# The toilet (10): Bernardo trades rolling paper for a look at the grass
+rclick Water
+expect level 10
+use Bolsa Bernardo
+expect inv Papela
+rclick Puerta
+expect level 8
+expect var 1305 2
+expect var 1333 1
+
+# Up to the street (3) and along to the next one (4): the cat
+rclick Puerta entrada
+expect level 5
+rclick Ir pa arriba
+expect level 3
+rclick Calle
+expect level 4
+use Trapera Gato
+expect var 1306 1
+rclick Gato
+expect inv Cadaver gatuno
+
+# Back to the bar: the dead cat wakes Justerini up, he offers his car
+rclick 6 150
+expect level 3
+rclick Calle pabajo
+expect level 5
+rclick Puerta garito
+expect level 8
+use Cadaver Borracho
+expect var 1317 1
+rclick Borracho
+expect var 1317 2
+
+# Home: the neighbours' door opens with the old woman's keys
+rclick Puerta entrada
+expect level 5
+rclick Ir pa arriba
+expect level 3
+rclick Portal
+expect level 2
+use Rosario Puerta madera
+expect level 7
+click 160 100
+expect level 13
+click 160 100
+click 160 100
+expect level 2
+expect inv Cuerda escalada
+
+# The other bar (14), two streets away: no money yet
+rclick Escaleras
+expect level 3
+rclick Calle
+expect level 4
+rclick 310 75
+expect level 15
+rclick Puerta
+expect level 14
+rclick Barman
+expect var 1308 1
+rclick Puerta calle
+expect level 15
+rclick 10 150
+expect level 4
+# ...but now there is a note on the ground
+rclick Papel morao
+expect inv Mil duros
+rclick 310 75
+expect level 15
+rclick Puerta
+expect level 14
+rclick Barman
+expect noinv Mil duros
+# Manolo drinks until he can't stand and wakes up outside: get home
+waitlevel 16
+# "Special mission: get home" and a picture
+wait 6000
+tap 160 100
+waitlevel 15
+waitidle
+rclick 10 150
+expect level 4
+rclick 6 150
+expect level 3
+rclick Portal
+expect level 2
+use calavera Puerta Manolo
+waitlevel 1
+# rolls a joint, then is sick, then sleeps it off (a picture, then 18 hours later)
+expect inv Porro
+wait 30000
+tap 160 100
+wait 20000
+waitidle
+expect inv Propaganda
+
+# Out of the window onto the roofs (17), and down into the police headquarters (18)
+rclick Ventana
+waitlevel 17
+waitidle
+use Cuerda Tejado
+waitlevel 18
+waitidle
+# Franco's portrait hides a blunderbuss, the copier forges drink vouchers
+use Trapera Cuadro
+rclick Agujero oculto
+expect inv Trabuco
+use Propaganda Fotocopiadora
+expect inv Montón de hojas
+# Next room (19): shoot the guard before he shoots Manolo, take his key, open the files
+rclick Puerta
+waitlevel 19
+use Trabuco Guardia Civil
+expect var 1313 1
+rclick Guardia Civil
+expect inv Llave hierro
+use hierro Fichero
+expect inv Cintas de música
+
+# Out through the lift (20) to the front of the station (12) and the street (3)
+rclick 15 70
+waitlevel 20
+waitidle
+rclick Ascensor
+waitlevel 12
+waitidle
+rclick Calle
+waitlevel 3
+# The alley behind the bar (21): a hammer, and Justerini drives Manolo to his grandpa
+rclick Calle
+expect level 4
+rclick 310 75
+expect level 15
+rclick Callejón
+waitlevel 21
+waitidle
+rclick Martillo
+expect inv Martillo
+rtap Coche
+# the drive: two pictures
+wait 15000
+tap 160 100
+wait 3000
+tap 160 100
+waitlevel 32
+waitidle
+
+# Grandpa (32) trades the key of his chest for the joint: three sacks of grass
+use Porro Agüelo
+expect inv Llave antigua
+use antigua Cofre
+expect inv Saco de marihuana
+rclick Puerta
+waitlevel 21
+waitidle
+rclick Calle
+waitlevel 15
+waitidle
+rclick 10 150
+expect level 4
+rclick 6 150
+expect level 3
+rclick Calle pabajo
+expect level 5
+rclick Puerta garito
+expect level 8
+# smash the toilet (10) with the hammer...
+rclick Water
+expect level 10
+use Martillo Water
+expect inv Bater petao
+rclick Puerta
+expect level 8
+rclick Puerta entrada
+expect level 5
+# ...and show it to the nuns in front of the cathedral: they drop their address book
+use Bater Monjas
+waitidle
+expect inv Agenda
+
+# Johnny (9) gets everything for the party
+rclick Puerta garito
+expect level 8
+rclick Reservado
+expect level 9
+use Montón Johnny
+expect var 1321 1
+use Cintas Johnny
+expect var 1322 1
+use Saco Johnny
+expect var 1323 1
+use Agenda Johnny
+expect var 1324 1
+use Caja Johnny
+waitlevel 30
+
+# The party (30): Manolo sings four songs
+waitidle
+click Cantar
+click Cantar otra
+click Otra cancion
+tap La última
+waitlevel 40
+# a last picture, then "THE END": Manolo says goodbye and the game exits
+wait 3000
+tap 160 100
+waitidle
+click THE END
+waitidle
+expect exited

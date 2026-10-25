@@ -6,6 +6,10 @@
 //! The demo is not part of this repository: set EDPACK_DEMO_DAT to its
 //! EDGAME.DAT and EDPACK_DEMO_SRC to the folder with its sources, otherwise
 //! these tests are skipped.
+//!
+//! Other games, played to their endings when their EDGAME.DAT is given:
+//! EDPACK_NAURU_DAT for "El Dios de Nauru" (registered EDPACK v2.03),
+//! EDPACK_DADTON_DAT for "Dadton Aguinández" (RUNDAT v1.02).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -16,7 +20,7 @@ use edpack::compiler::{compile_project, pack_game};
 use edpack::dat::GameArchive;
 use edpack::game::Game;
 use edpack::harness::Harness;
-use edpack::level::{load_level, text_string};
+use edpack::level::{LevelFormat, load_level, text_string};
 use edpack::memory::{Memory, ds};
 
 fn env_path(name: &str) -> PathBuf {
@@ -107,7 +111,7 @@ fn compiled_scripts_match_ed_exe_word_for_word() {
         let src = std::fs::read(src_path().join(format!("ROOM{l}.ED"))).unwrap();
         let items = parse_ed(&src, "room").unwrap();
         let mut mem = Memory::new();
-        let code = load_level(&mut mem, &arc.bytes, arc.level_offset(l), true).unwrap().code;
+        let code = load_level(&mut mem, &arc.bytes, arc.level_offset(l), true, LevelFormat::Shareware).unwrap().code;
         for it in &items {
             let Item::Block { kind, n, body, .. } = it else { continue };
             let base = match kind.as_str() {
@@ -136,8 +140,8 @@ fn compiled_tables_and_global_files_match_ed_exe() {
     };
     for l in 0..=5usize {
         let (mut a, mut b) = (Memory::new(), Memory::new());
-        load_level(&mut a, &out[&format!("NIVEL.{l:03}")], 0, false).unwrap();
-        load_level(&mut b, &arc.bytes, arc.level_offset(l), true).unwrap();
+        load_level(&mut a, &out[&format!("NIVEL.{l:03}")], 0, false, LevelFormat::Shareware).unwrap();
+        load_level(&mut b, &arc.bytes, arc.level_offset(l), true, LevelFormat::Shareware).unwrap();
         for (what, base, size, n, flag) in [
             ("LIMIT", ds::LIMIT, 14, 40, 0),
             ("LIMITMOV", ds::LIMITMOV, 22, 320, 0),
@@ -167,11 +171,49 @@ fn save_and_load_through_the_space_menu() {
     }
     let mut h = Harness::new(Game::open(&dat_path()).unwrap()).unwrap();
     // take the tray, SPACE -> GUARDAR -> slot 1, type a name, Enter
-    h.run("wait 9000; do 2 186 95; key 57; wait 500; click 237 67; wait 300; click 100 30; type Celda; enter; wait 500")
-        .unwrap();
+    h.run(
+        "wait 9000; do 2 186 95; key 57; wait 500; click 237 67; wait 300; click 100 30; type Celda; enter; wait 500",
+    )
+    .unwrap();
     // overturn the bed, then SPACE -> CARGAR -> slot 1
-    h.run("do 3 225 115; expect var 1003 1; key 57; wait 400; click 237 52; wait 300; click 100 30; wait 1500").unwrap();
+    h.run("do 3 225 115; expect var 1003 1; key 57; wait 400; click 237 52; wait 300; click 100 30; wait 1500")
+        .unwrap();
     assert_eq!(h.var(1003), 0, "the loaded game is from before the bed was moved");
     assert_eq!(h.u8(0xfd2c), 2, "the game's verb (Coger) is restored, not the menu cursor");
     h.run("expect inv 0; expect inv 1").unwrap();
+}
+
+#[test]
+fn nauru_plays_to_the_end() {
+    let dat = env_path("EDPACK_NAURU_DAT");
+    if !dat.is_file() {
+        eprintln!("skipped: set EDPACK_NAURU_DAT to El Dios de Nauru's EDGAME.DAT");
+        return;
+    }
+    let game = Game::open(&dat).unwrap();
+    assert_eq!(game.level_format(), LevelFormat::Registered);
+    let script =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/walkthrough/nauru.txt")).unwrap();
+    let mut h = Harness::new(game).unwrap();
+    h.run(&script).unwrap_or_else(|e| panic!("{e}"));
+    assert!(h.exited(), "the game quits from the menu shown after the ending");
+    assert_eq!(h.var(1060), 1, "the true god was chosen");
+}
+
+#[test]
+fn dadton_plays_to_the_end() {
+    let dat = env_path("EDPACK_DADTON_DAT");
+    if !dat.is_file() {
+        eprintln!("skipped: set EDPACK_DADTON_DAT to Dadton Aguinández's EDGAME.DAT");
+        return;
+    }
+    let game = Game::open(&dat).unwrap();
+    assert_eq!(game.level_format(), LevelFormat::V102);
+    let script =
+        std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/walkthrough/dadton.txt"))
+            .unwrap();
+    let mut h = Harness::new(game).unwrap();
+    h.run(&script).unwrap_or_else(|e| panic!("{e}"));
+    assert!(h.exited(), "the game ends with EXIT after the credits");
+    assert_eq!(h.var(1017), 2, "two pirates joined the crew");
 }

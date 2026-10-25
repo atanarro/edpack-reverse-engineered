@@ -9,6 +9,8 @@
 pub const VAR_REF: i32 = 25000;
 /// More consecutive ops without yielding is a fatal error in the original.
 pub const MAX_OPS: u32 = 51;
+/// RUNDAT v1.02's limit.
+pub const MAX_OPS_V102: u32 = 200;
 
 /// (opcode, name, argument count)
 pub const OPS: &[(i32, &str, usize)] = &[
@@ -29,6 +31,7 @@ pub const OPS: &[(i32, &str, usize)] = &[
     (15, "RET", 0),
     (16, "JMP", 1),
     (17, "CMP", 2),
+    (18, "SKIPTO", 1), // RUNDAT v1.02 only
     (19, "JE", 1),
     (20, "JNE", 1),
     (21, "JL", 1),
@@ -71,6 +74,10 @@ pub const OPS: &[(i32, &str, usize)] = &[
     (64, "NEXTFRAME", 2),
     (65, "DELAY", 2),
     (66, "LOADDATA", 2),
+    // RUNDAT v1.02 only (names proposed, the v1.02 ED.EXE is not available)
+    (67, "NOSKIP", 0),
+    (68, "PXY", 2),
+    (69, "ISANIM", 1),
     // source-level aliases accepted by the compiler
     (0, "FINISH", 0),
     (44, "MOUSEACT", 1),
@@ -144,6 +151,10 @@ pub mod op {
     pub const NEXTFRAME: i32 = 64;
     pub const DELAY: i32 = 65;
     pub const LOADDATA: i32 = 66;
+    pub const SKIPTO: i32 = 18;
+    pub const NOSKIP: i32 = 67;
+    pub const PXY: i32 = 68;
+    pub const ISANIM: i32 = 69;
 }
 
 /// Script results.  DELAY returns its counter's low byte (any 0..255

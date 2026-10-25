@@ -1,9 +1,11 @@
 //! Readers for the packed game archive (EDGAME.DAT, produced by ED2DAT.EXE).
 //!
 //! Layout (reverse-engineered from RUNDAT.EXE):
-//! * `u32 table[]`, entry i at offset 4*i. Shareware layout: 0..5 = levels 0..5,
-//!   6 = NIVEL.INV, 7 = NIVEL.FNT (raw font), 8 = NIVEL.MOV, 9 = NIVEL.MOU,
-//!   10 = NIVEL.IAC, 11 = NIVEL.TIT.
+//! * `u32 table[]`, entry i at offset 4*i: one entry per level slot, then six
+//!   special files: NIVEL.INV, NIVEL.FNT (raw font), NIVEL.MOV, NIVEL.MOU,
+//!   NIVEL.IAC, NIVEL.TIT. The shareware ED2DAT.EXE writes 6 level slots
+//!   (12 entries); the registered one writes 1000 (1006 entries). Unused level
+//!   slots are 0.
 //! * Compiled files start with a 30 byte header: `02 00 00 <type>` + 26 bytes.
 //! * Resource files (PCX, CMF, VOC, FLI) referenced by levels are stored
 //!   verbatim with every byte +5 and located by absolute (offset, size)
@@ -25,14 +27,15 @@ pub enum Special {
 
 impl Special {
     pub const ALL: [Special; 6] = [Special::Inv, Special::Fnt, Special::Mov, Special::Mou, Special::Iac, Special::Tit];
+    /// Position among the special entries (after the level slots).
     pub fn index(self) -> usize {
         match self {
-            Special::Inv => 6,
-            Special::Fnt => 7,
-            Special::Mov => 8,
-            Special::Mou => 9,
-            Special::Iac => 10,
-            Special::Tit => 11,
+            Special::Inv => 0,
+            Special::Fnt => 1,
+            Special::Mov => 2,
+            Special::Mou => 3,
+            Special::Iac => 4,
+            Special::Tit => 5,
         }
     }
     pub fn file_name(self) -> &'static str {
@@ -66,14 +69,16 @@ fn le32(b: &[u8], o: usize) -> u32 {
 pub struct GameArchive {
     pub bytes: Vec<u8>,
     entries: Vec<u32>,
+    /// Detected level layout, see [`crate::game::Game::level_format`].
+    pub(crate) format: std::sync::OnceLock<crate::level::LevelFormat>,
 }
 
 impl GameArchive {
     pub fn new(bytes: Vec<u8>) -> Self {
         let first = le32(&bytes, 0);
-        let count = ((first >> 2) as usize).min(1000).min(bytes.len() / 4);
+        let count = ((first >> 2) as usize).min(bytes.len() / 4);
         let entries = (0..count).map(|i| le32(&bytes, i * 4)).collect();
-        GameArchive { bytes, entries }
+        GameArchive { bytes, entries, format: Default::default() }
     }
 
     pub fn is_archive(bytes: &[u8]) -> bool {
@@ -89,13 +94,23 @@ impl GameArchive {
         self.entries.get(i).copied().unwrap_or(0) as usize
     }
 
+    /// Number of level slots (6 shareware, 1000 registered).
+    pub fn level_slots(&self) -> usize {
+        self.entries.len().saturating_sub(Special::ALL.len())
+    }
+
     pub fn level_offset(&self, n: usize) -> usize {
-        self.entry(n)
+        if n < self.level_slots() { self.entry(n) } else { 0 }
+    }
+
+    /// Offset of a special file's entry, or 0 if absent.
+    pub fn special_offset(&self, s: Special) -> usize {
+        self.entry(self.level_slots() + s.index())
     }
 
     /// Raw bytes of a special entry that is not a compiled file (the font).
     pub fn special_raw(&self, s: Special) -> Option<&[u8]> {
-        let start = self.entry(s.index());
+        let start = self.special_offset(s);
         if start == 0 {
             return None;
         }
@@ -114,6 +129,10 @@ impl GameArchive {
 pub struct ByteReader<'a> {
     pub bytes: &'a [u8],
     pub pos: usize,
+    /// A run token crossed the end of the block being read (the original
+    /// drops the excess; the encoder never produces it, so it betrays a
+    /// wrong layout).
+    pub overrun: bool,
 }
 
 pub struct Header {
@@ -124,7 +143,7 @@ pub struct Header {
 
 impl<'a> ByteReader<'a> {
     pub fn new(bytes: &'a [u8], pos: usize) -> Self {
-        ByteReader { bytes, pos }
+        ByteReader { bytes, pos, overrun: false }
     }
     pub fn byte(&mut self) -> Result<u8, Error> {
         let b = *self.bytes.get(self.pos).ok_or_else(|| Error::new("Fin de datos inesperado"))?;
@@ -157,6 +176,9 @@ impl<'a> ByteReader<'a> {
             if c > 0xc0 {
                 let k = (c & 0x3f) as usize;
                 let v = self.byte()?;
+                if out.len() + k > size {
+                    self.overrun = true;
+                }
                 for _ in 0..k {
                     if out.len() < size {
                         out.push(v);

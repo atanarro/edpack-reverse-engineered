@@ -1,8 +1,9 @@
 # EDPACK in Rust
 
-A modern re-implementation of **EDPACK v2.0** ("Editor de Aventuras Gráficas", José Luis
-Serrano Moreno, 1990s), the Spanish DOS toolkit for point-and-click graphic adventures. It plays the games made with it natively, and it also replaces the DOS-only
-toolchain.
+A modern re-implementation of **EDPACK** ("Editor de Aventuras Gráficas", José Luis Serrano
+Moreno, 1990s), the Spanish DOS toolkit for point-and-click graphic adventures. It plays the
+games made with the DOS versions natively, both EDPACK v1 (`RUNVGA.EXE`) and EDPACK v2.0x
+(`RUNDAT.EXE`, shareware and registered runtimes), and it replaces the v2 DOS-only toolchain.
 
 It is based on the shareware version of the Editor de Aventuras Gráficas (EDPACK) v2.02. That
 version was distributed for free on the CD-ROM included with *PCManía* magazine issue 67 (May
@@ -16,6 +17,19 @@ version was distributed for free on the CD-ROM included with *PCManía* magazine
 | `ED.EXE` | `edc <src> <out>` | Compiles `.ED` sources to `NIVEL.*` |
 | `ED2DAT.EXE` | `edc <src> <out> --pack` | Packs a game into `EDGAME.DAT` |
 | `SBFMDRV.COM`, `CT-VOICE.DRV` | `src/audio/` | OPL2 FM emulator for CMF music, VOC playback |
+| `RUNVGA.EXE` (EDPACK v1) | `edpack <folder>` | Plays a v1 `RESOURCE.DAT` (or `<base>.nnn` files) |
+
+Games known to work, each played to its ending by the test suite:
+
+| Game | Made with | Interpreter |
+|---|---|---|
+| *Peter's Adventure I* (the demo) | EDPACK v2.0 shareware | `RUNDAT.EXE` v1.0 shareware |
+| *El Dios de Nauru* (BYK Software, 2001) | EDPACK v2.03 | `RUNDAT.EXE` v1.0 registered |
+| *Dadton Aguinández* (Coctel Software, 1998) | EDPACK v2.02 | `RUNDAT.EXE` v1.02 |
+| *Las Aventuras de Manolo Kabezabolo* (Digital Legion, 1997) | EDPACK v1 | `RUNVGA.EXE` v1.03 |
+
+The variant is detected from the data. See [`docs/edpack-history.md`](docs/edpack-history.md)
+for the versions; the Windows rewrite EDPACK 2000 is a different program and is not supported.
 
 The engine was built by reverse-engineering the original interpreter. The EDPACK package comes
 with a demo game, *Peter's Adventure I*, both compiled (`EDGAME.DAT`) and as `.ED` sources. No
@@ -41,7 +55,7 @@ EDPACK_DEMO_DAT=/path/to/EDGAME.DAT cargo build --release
 
 ```sh
 target/release/edpack game/EDGAME.DAT   # any EDPACK game
-target/release/edpack game              # a folder: EDGAME.DAT, NIVEL.* files or .ED sources
+target/release/edpack game              # a folder: EDGAME.DAT, NIVEL.* files, .ED sources or a v1 RESOURCE.DAT
 target/release/edpack                   # the game embedded at build time, if any
 ```
 
@@ -50,8 +64,8 @@ Options:
 | Option | Meaning |
 |---|---|
 | `--scale N` | Window size: 320×240×N (4:3) |
-| `--speed 0-4` | Game speed (SETUP.CFG speed; default 2) |
-| `--text-speed 0-4` | Text speed (SETUP.CFG text speed; default 3) |
+| `--speed 0-4` | Game speed (default: the game's SETUP.CFG, else 2) |
+| `--text-speed 0-4` | Text speed (default: the game's SETUP.CFG, else 3) |
 | `--mute` | No sound |
 | `--saves DIR` | Where savegames go (default `~/.local/share/edpack/<title>/SAVEGAME._N_`) |
 
@@ -65,6 +79,11 @@ The controls are those of the original:
 | Space | Load / save / quit menu |
 | Ctrl+C | Quit |
 
+EDPACK v1 games have no verbs. Left click on a thing does what that thing is set up for (look at it,
+use it, go there); right click takes it. The inventory is the bar at the bottom: left click on an
+object describes it, right click picks it up to use on a thing or on another object. Ctrl+Esc
+quits, as in the original.
+
 ## Tools
 
 ```sh
@@ -72,12 +91,13 @@ target/release/edc src out --pack                    # ED.EXE + ED2DAT.EXE
 target/release/edtool run EDGAME.DAT shots tests/walkthrough/peter.txt   # headless play + PNGs
 target/release/edtool disasm EDGAME.DAT 3            # decompile level 3's scripts
 target/release/edtool dump EDGAME.DAT                # summary of every level
-target/release/edtool cmf2wav src/SATAIR.CMF satair.wav
+target/release/edtool cmf2wav SATAIR.CMF satair.wav
 cargo test --release                                 # unit and end-to-end tests
 ```
 
-The end-to-end tests need the demo game. Point them at its compiled `EDGAME.DAT` and at the folder
-with its sources:
+The end-to-end tests need the games, which are not part of this repository; keep them elsewhere
+and point the tests at them with environment variables. For the demo, give its compiled
+`EDGAME.DAT` and the folder with its sources:
 
 ```sh
 EDPACK_DEMO_DAT=/path/to/DEMO/EDGAME.DAT EDPACK_DEMO_SRC=/path/to/FUENTES cargo test --release
@@ -85,8 +105,11 @@ EDPACK_DEMO_DAT=/path/to/DEMO/EDGAME.DAT EDPACK_DEMO_SRC=/path/to/FUENTES cargo 
 
 They play the demo to the end three ways: from the original `EDGAME.DAT`, from the sources, and
 from an `EDGAME.DAT` built by `edc --pack`. They check that all three runs end at the same
-simulated moment, and that the compiler's output matches the original ED.EXE's. Without these
-variables, the tests skip.
+simulated moment, and that the compiler's output matches the original ED.EXE's.
+
+Other games are played to their endings when given: `EDPACK_NAURU_DAT` and `EDPACK_DADTON_DAT`
+name the `EDGAME.DAT` of *El Dios de Nauru* and *Dadton Aguinández*, and `EDPACK_MANOLO` the folder with the `RESOURCE.DAT` of *Las Aventuras
+de Manolo Kabezabolo* (EDPACK v1). Tests whose variables are not set are skipped.
 
 For debugging, `EDPACK_SNAPSHOT=<seconds>:<file.png> edpack ...` saves the window after that
 many seconds and quits.
@@ -104,7 +127,7 @@ many seconds and quits.
   - EDLETRAS fonts, PCX, Autodesk FLI, CMF, VOC.
 
   Strings are obfuscated with a different key per kind of string.
-- **Engine threading** (`engine.rs`). The original is a blocking DOS program: a main loop that
+- **Engine threading** (`host.rs`, shared by both engines). The original is a blocking DOS program: a main loop that
   waits two VGA retraces per pass (about 28.5 ms), a 50 Hz timer interrupt, and routines with
   their own loops (fades, FLI playback, menus). The engine keeps that structure and runs on its
   own thread. Whenever time must pass it hands the frame to the host and waits for the clock to
@@ -122,6 +145,14 @@ many seconds and quits.
 - **Compiler** (`compiler/`). The `.ED` parser, script lowering, and the LIMITMOV rule
   generator. Scripts, LIMITMOV tables, texts, doors and the MOV/MOU/IAC/TIT files are identical
   to what the original ED.EXE produced for the demo.
+- **v2 runtime variants** (`level.rs`, `dat.rs`). The registered archives have 1000 level slots,
+  the registered level files lack the shareware's filler bytes, and RUNDAT v1.02 has 12-byte
+  animation records, a skip key, PXY/ISANIM, a 200-operation limit and some UI changes. The
+  layout is detected by parsing the levels each way. Details: `docs/reverse-engineering/07-rundat-versions.md`.
+- **EDPACK v1** (`v1/`). A separate engine for RUNVGA.EXE: its own data segment layout, the raw
+  level tables of `RESOURCE.DAT`, the 41-opcode interpreter, the walker, the verbless click
+  logic, the inventory bar, texts, the incremental screen updates and the SPACE menu. Details:
+  `docs/reverse-engineering/v1/`.
 
 Some quirks of the original are reproduced on purpose, because games were tested against them:
 
@@ -139,7 +170,9 @@ Some things are deliberately different:
 - FM music comes from an emulator.
 - Fades run at a fixed speed. The original's fade speed depended on the CPU.
 
-The full reverse-engineering notes are in [`docs/reverse-engineering/`](docs/reverse-engineering/).
+The full reverse-engineering notes are in [`docs/reverse-engineering/`](docs/reverse-engineering/). The
+EDPACK versions, their interpreters and the games known to use them are described in
+[`docs/edpack-history.md`](docs/edpack-history.md).
 
 ## License
 

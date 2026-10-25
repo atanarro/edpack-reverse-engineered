@@ -16,6 +16,7 @@ pub mod fli;
 pub mod font;
 pub mod game;
 pub mod harness;
+pub mod host;
 pub mod level;
 pub mod memory;
 pub mod menu;
@@ -24,6 +25,7 @@ pub mod player;
 pub mod png_out;
 pub mod specials;
 pub mod ui;
+pub mod v1;
 pub mod vm;
 
 use std::fmt;

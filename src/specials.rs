@@ -34,7 +34,15 @@ impl InventoryFile {
     /// Decoded record of object n, as ADDINV reads it.
     pub fn record(&self, n: usize) -> Vec<u8> {
         // QUIRK: the original computes n*0x4aa in 16 bits.
-        let at = (n * INV_RECORD) & 0xffff;
+        self.record_at((n * INV_RECORD) & 0xffff)
+    }
+
+    /// Record n with RUNDAT v1.02's 32-bit offset (no 16-bit quirk).
+    pub fn record_v102(&self, n: usize) -> Vec<u8> {
+        self.record_at(n * INV_RECORD)
+    }
+
+    fn record_at(&self, at: usize) -> Vec<u8> {
         let mut rec = vec![0u8; INV_RECORD];
         for (i, b) in rec.iter_mut().enumerate() {
             *b = self.data.get(at + i).copied().unwrap_or(0);
@@ -69,7 +77,16 @@ impl MouseFile {
     }
     /// 72 bytes read at the (buggy) 60-byte stride used by NEWMOUSE.
     pub fn record(&self, n: usize) -> Vec<u8> {
-        (0..0x48).map(|i| self.data.get(n * 0x3c + i).copied().unwrap_or(0)).collect()
+        self.read(n, 0x48)
+    }
+
+    /// RUNDAT v1.02: 10 cursors (120 bytes), same 60-byte stride.
+    pub fn record_v102(&self, n: usize) -> Vec<u8> {
+        self.read(n, 0x78)
+    }
+
+    fn read(&self, n: usize, len: usize) -> Vec<u8> {
+        (0..len).map(|i| self.data.get(n * 0x3c + i).copied().unwrap_or(0)).collect()
     }
 }
 

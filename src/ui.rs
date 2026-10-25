@@ -6,7 +6,7 @@
 use crate::engine::Engine;
 use crate::font::LINE_HEIGHT;
 use crate::level::text_string;
-use crate::memory::{THING_SIZE, ds};
+use crate::memory::{THING_SIZE, ds, v102};
 use crate::player as p;
 use crate::specials::INV_RECORD;
 
@@ -371,10 +371,10 @@ pub fn build_label(e: &mut Engine) {
 }
 
 pub fn draw_info_bar(e: &mut Engine) {
-    let m = &e.mem;
-    if m.u8(b::ENABLED) != 1 || m.u8(b::STATE) == 0 {
+    if !e.flag_on(b::ENABLED) || e.mem.u8(b::STATE) == 0 {
         return;
     }
+    let m = &e.mem;
     let s = m.cstr(b::TEXT, 0x50);
     let (x, y, c, bo) = (m.i16(b::X), m.i16(b::Y), m.u8(b::COLOR) as u8, m.u8(b::BORDER) as u8);
     e.font.text(&mut e.vga, x, y, &s, c, bo);
@@ -653,6 +653,9 @@ pub fn inventory_frame(e: &mut Engine) {
         e.mem.set8(mo::HOVER, 0);
         e.mem.set16(iv::HOVER, 0);
         hover_slots(e);
+        if e.v102 {
+            arrow_cursor(e);
+        }
         if e.mem.u8(iv::LAST_HOVER) != (e.mem.u16(iv::HOVER) & 0xff) {
             let h = e.mem.u16(iv::HOVER);
             e.mem.set8(iv::LAST_HOVER, h);
@@ -674,7 +677,8 @@ pub fn inventory_frame(e: &mut Engine) {
                 e.mem.set8(iv::FIRST, first + 1);
                 return;
             }
-            if hov != 0 && e.mem.u8(mo::VERB) == 1 {
+            let (look, use_) = inventory_verbs(e);
+            if hov != 0 && e.mem.u8(mo::VERB) == look {
                 close(e);
                 let v = e.mem.u8(mo::SAVED_VERB);
                 e.mouse_action(v);
@@ -683,7 +687,7 @@ pub fn inventory_frame(e: &mut Engine) {
                 e.mem.set16(iv::HOVER, 0);
                 e.mem.set8(iv::LAST_HOVER, 0);
             }
-            if hov != 0 && e.mem.u8(mo::VERB) == 3 {
+            if hov != 0 && e.mem.u8(mo::VERB) == use_ {
                 let obj = inv_slot(e, (hov - 1) as usize).1;
                 if e.mem.u8(iv::HELD) != 0 {
                     let m = &mut e.mem;
@@ -706,8 +710,36 @@ pub fn inventory_frame(e: &mut Engine) {
         }
     }
     build_label(e);
-    if e.button(1) && e.mem.u8(0xfd03) == 1 {
-        let v = if e.mem.u8(mo::VERB) == 1 { 3 } else { 1 };
+    if e.button(1) && e.flag_on(crate::engine::g::VERBS_ON) {
+        let (look, use_) = inventory_verbs(e);
+        let v = if e.mem.u8(mo::VERB) == look { use_ } else { look };
+        e.mouse_action(v);
+        if e.v102 {
+            let verb = e.mem.u8(mo::VERB);
+            e.mem.set8(v102::INV_VERB, verb);
+        }
+    }
+}
+
+/// The panel's "look" and "use / pick up" verbs: 1 and 3, or vars 51/52 in v1.02.
+fn inventory_verbs(e: &Engine) -> (i32, i32) {
+    if e.v102 { (e.mem.i16(v102::VAR51_LOOK), e.mem.i16(v102::VAR52_USE)) } else { (1, 3) }
+}
+
+/// v1.02: the scroll-arrow cursor (var54) over the scroll zones.
+fn arrow_cursor(e: &mut Engine) {
+    let (hx, _) = e.hotspot();
+    let first = e.mem.u8(iv::FIRST);
+    let (arrow, verb) = (e.mem.i16(v102::VAR54_ARROW_CURSOR), e.mem.u8(mo::VERB));
+    if hx <= 13 && first > 0 && verb != arrow {
+        e.mouse_action(arrow);
+    }
+    let verb = e.mem.u8(mo::VERB);
+    if hx >= 307 && first + 8 < 30 && inv_slot(e, first as usize + 8).0 && verb != arrow {
+        e.mouse_action(arrow);
+    }
+    if e.mem.u8(mo::VERB) == arrow && 13 < hx && hx < 307 {
+        let v = e.mem.u8(v102::INV_VERB);
         e.mouse_action(v);
     }
 }

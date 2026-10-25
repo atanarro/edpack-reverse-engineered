@@ -11,10 +11,8 @@
 //! deterministic for a given input sequence.  See [`EngineHandle`].
 
 use std::collections::HashMap;
-use std::panic::{self, AssertUnwindSafe};
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex, Once};
-use std::thread::JoinHandle;
+use std::panic;
+use std::sync::{Arc, Mutex};
 
 use crate::Error;
 use crate::audio::Mixer;
@@ -23,13 +21,15 @@ use crate::dat::{ByteReader, Special, file_type};
 use crate::fli::FliDecoder;
 use crate::font::Font;
 use crate::game::Game;
-use crate::level::{file_entry, gfx_entry, load_data_file, load_level, thing_name};
-use crate::memory::{Memory, THING_SIZE, ds};
+use crate::host::{self, Core, Fatal, Host};
+pub use crate::host::{Frame, Input, Key};
+use crate::level::{LevelFormat, file_entry, gfx_entry, load_data_file, load_level, thing_name};
+use crate::memory::{Memory, THING_SIZE, ds, v102};
 use crate::pcx::decode_pcx;
 use crate::player as p;
 use crate::specials::{INV_RECORD, InventoryFile, MouseFile, load_iac, load_title};
 use crate::ui::{self, bar, inv, mouse as mo, stext as st, text as tx};
-use crate::vm::{self, MAX_OPS, VAR_REF, op};
+use crate::vm::{self, MAX_OPS, MAX_OPS_V102, VAR_REF, op};
 
 /// One main-loop pass: two retraces of a 70.086 Hz VGA.
 pub const PASS_MS: f64 = 2000.0 / 70.086;
@@ -147,56 +147,10 @@ impl Default for Options {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Key {
-    Char(char),
-    Enter,
-    Escape,
-    Backspace,
-}
-
-#[derive(Clone, Debug)]
-pub enum Input {
-    /// pointer position in 320x200 game coordinates
-    MouseMove(i32, i32),
-    /// button 0 = left, 1 = right
-    Button(usize, bool),
-    /// PC scan code, plus the key's meaning for text entry
-    KeyDown(u8, Option<Key>),
-    KeyUp(u8),
-}
-
 #[derive(Default, Clone, Copy)]
 struct ButtonState {
     held: bool,
     presses: u32,
-}
-
-/// Panic payload for fatal game errors (shown to the player).
-struct Fatal(String);
-/// Panic payload used to unwind the engine thread when the host quits.
-struct QuitSignal;
-
-type Job = Box<dyn FnOnce(&mut Engine) + Send>;
-
-enum ToEngine {
-    Advance { now: f64, events: Vec<Input> },
-    With(Job),
-}
-
-/// What the host gets back after each advance.
-pub struct Frame {
-    /// 320x200 palette indices (cursor included)
-    pub screen: Vec<u8>,
-    /// 8-bit RGB
-    pub palette: Vec<u8>,
-    pub exited: bool,
-    pub error: Option<String>,
-}
-
-struct Link {
-    rx: Receiver<ToEngine>,
-    tx: Sender<Frame>,
 }
 
 pub struct Engine {
@@ -216,20 +170,20 @@ pub struct Engine {
     pub dac: [u8; 768],
     pub palette: [u8; 768],
     pub exited: bool,
-    pub clock: f64,
-    next_tick: f64,
-    next_resume: f64,
-    last: Option<f64>,
+    host: Host<Engine>,
     buttons: [ButtonState; 2],
     keys: [u8; 128],
     pointer: (i32, i32),
     pub last_char: Option<Key>,
     music_name: Option<Vec<u8>>,
+    /// The CMF buffer: the last tune loaded by PLAYCMF.
+    cmf: Vec<u8>,
     voice: Option<Voice>,
     pub mixer: Arc<Mutex<Mixer>>,
     storage: Box<dyn Storage>,
     rng: u64,
-    link: Option<Link>,
+    /// RUNDAT v1.02 behaviour (Dadton): see docs/reverse-engineering/07-rundat-versions.md.
+    pub v102: bool,
 }
 
 impl Engine {
@@ -241,8 +195,9 @@ impl Engine {
         let mou_file = MouseFile::load(game.special(Special::Mou))?;
         let title = load_title(game.special(Special::Tit))?;
         let iac = load_iac(game.special(Special::Iac))?;
+        let v102 = game.level_format() == LevelFormat::V102;
         let mut e = Engine {
-            mem: Memory::new(),
+            mem: if v102 { Memory::with_vars(Memory::v102_vars()) } else { Memory::new() },
             code: vec![0; 5000],
             game,
             font,
@@ -258,20 +213,18 @@ impl Engine {
             dac: [0; 768],
             palette: [0; 768],
             exited: false,
-            clock: 0.0,
-            next_tick: 0.0,
-            next_resume: 0.0,
-            last: None,
+            host: Host::default(),
             buttons: [ButtonState::default(); 2],
             keys: [0; 128],
             pointer: (160, 100),
             last_char: None,
             music_name: None,
+            cmf: Vec::new(),
             voice: None,
             mixer: Arc::new(Mutex::new(Mixer::new(44100.0))),
             storage,
             rng: opts.seed | 1,
-            link: None,
+            v102,
         };
         e.mem.write(g::IAC, &iac);
         e.init_globals(opts.speed, opts.text_speed);
@@ -336,129 +289,72 @@ impl Engine {
         m.set16(mo::W, 10);
         m.set16(mo::H, 10);
         m.set16(0x4338, -1);
+        if self.v102 {
+            for (a, v) in [
+                (v102::VAR28_MENU, 1),
+                (v102::VAR29_BAR, 1),
+                (v102::VAR30_HOVER, 1),
+                (v102::VAR31_INV, 1),
+                (v102::VAR32_VERBS, 1),
+                (v102::VAR47_SKIP_KEY, 1),
+                (v102::VAR50_VERBS, 5),
+                (v102::VAR51_LOOK, 1),
+                (v102::VAR52_USE, 3),
+                (v102::VAR53_MENU_CURSOR, 5),
+                (v102::VAR54_ARROW_CURSOR, 5),
+                (v102::SKIP_TARGET, -1),
+            ] {
+                m.set16(a, v);
+            }
+            for i in 0..50 {
+                m.set16(v102::ANIM_SKIP + 2 * i, -1);
+            }
+            m.set8(v102::INV_VERB, 0xff);
+            // hw_init seeds the counter with the DOS time's hundredths
+            m.set8(v102::RAND_COUNTER, (self.rng % 100) as i32);
+        }
+    }
+
+    /// MOUSEACTION argument for the menu: 101 (-> cursor 5), or var53 in v1.02.
+    pub fn menu_cursor(&self) -> i32 {
+        if self.v102 { self.mem.i16(v102::VAR53_MENU_CURSOR) } else { 101 }
+    }
+
+    /// The UI switches (vars 28..32): bytes in v1.0, independent words in v1.02.
+    pub fn flag_on(&self, demo_addr: usize) -> bool {
+        if !self.v102 {
+            return self.mem.u8(demo_addr) == 1;
+        }
+        let a = match demo_addr {
+            g::MENU_ON => v102::VAR28_MENU,
+            bar::ENABLED => v102::VAR29_BAR,
+            g::THINGS_ON => v102::VAR30_HOVER,
+            g::INV_ON => v102::VAR31_INV,
+            g::VERBS_ON => v102::VAR32_VERBS,
+            a => a,
+        };
+        self.mem.i16(a) == 1
     }
 
     // ------------------------------------------------------------ threading
 
     /// Start the engine on its own thread.
     pub fn spawn(self) -> EngineHandle {
-        static HOOK: Once = Once::new();
-        HOOK.call_once(|| {
-            let default = panic::take_hook();
-            panic::set_hook(Box::new(move |info| {
-                let pl = info.payload();
-                if pl.downcast_ref::<Fatal>().is_none() && pl.downcast_ref::<QuitSignal>().is_none() {
-                    default(info);
-                }
-            }));
-        });
-        let (to_engine, rx) = channel();
-        let (tx, frames) = channel();
         let mixer = self.mixer.clone();
-        let thread = std::thread::Builder::new()
-            .name("edpack-engine".into())
-            .stack_size(16 << 20)
-            .spawn(move || {
-                let mut e = self;
-                e.link = Some(Link { rx, tx });
-                e.thread_main();
-            })
-            .expect("no se pudo crear el hilo del motor");
-        EngineHandle { tx: to_engine, rx: frames, thread: Some(thread), mixer, finished: false, error: None }
-    }
-
-    fn thread_main(&mut self) {
-        let r = panic::catch_unwind(AssertUnwindSafe(|| {
-            self.block();
-            self.wait(0.0);
-            self.main_loop();
-        }));
-        let error = match r {
-            Ok(()) => None,
-            Err(pl) => {
-                if pl.downcast_ref::<QuitSignal>().is_some() {
-                    return;
-                }
-                Some(if let Some(Fatal(m)) = pl.downcast_ref::<Fatal>() {
-                    m.clone()
-                } else if let Some(s) = pl.downcast_ref::<String>() {
-                    format!("Error interno: {s}")
-                } else if let Some(s) = pl.downcast_ref::<&str>() {
-                    format!("Error interno: {s}")
-                } else {
-                    "Error interno".to_string()
-                })
-            }
-        };
-        self.exited = true;
-        let Some(link) = self.link.take() else { return };
-        self.present();
-        let _ = link.tx.send(self.frame_out(error));
-        // Keep serving inspection jobs (tests, tools) until the host hangs up.
-        while let Ok(msg) = link.rx.recv() {
-            match msg {
-                ToEngine::With(job) => job(self),
-                ToEngine::Advance { .. } => {
-                    let _ = link.tx.send(self.frame_out(None));
-                }
-            }
-        }
-    }
-
-    fn frame_out(&self, error: Option<String>) -> Frame {
-        Frame { screen: self.screen.clone(), palette: self.palette.to_vec(), exited: self.exited, error }
-    }
-
-    /// Hand the current frame to the host and wait for more time / input.
-    /// Inspection jobs sent meanwhile run here, on the paused engine.
-    fn block(&mut self) {
-        self.present();
-        let frame = self.frame_out(None);
-        let sent = self.link.as_ref().expect("the engine must run on its thread (Engine::spawn)").tx.send(frame);
-        if sent.is_err() {
-            panic::panic_any(QuitSignal);
-        }
-        loop {
-            let msg = self.link.as_ref().unwrap().rx.recv();
-            match msg {
-                Ok(ToEngine::Advance { now, events }) => {
-                    let last = self.last.unwrap_or(now);
-                    self.clock += (now - last).clamp(0.0, 250.0);
-                    self.last = Some(now);
-                    for ev in events {
-                        self.input_event(ev);
-                    }
-                    return;
-                }
-                Ok(ToEngine::With(job)) => job(self),
-                Err(_) => panic::panic_any(QuitSignal),
-            }
-        }
+        host::spawn(self, mixer)
     }
 
     /// Let `ms` milliseconds of emulated time pass, running the 50 Hz timer
     /// interrupt meanwhile (the original's waits and retrace syncs).
     pub fn wait(&mut self, ms: f64) {
-        self.next_resume += ms;
-        loop {
-            if self.next_tick <= self.next_resume {
-                if self.next_tick > self.clock {
-                    self.block();
-                    continue;
-                }
-                self.isr_tick();
-                self.next_tick += TICK_MS;
-            } else {
-                if self.next_resume > self.clock {
-                    self.block();
-                    continue;
-                }
-                return;
-            }
-        }
+        host::wait(self, ms)
     }
 
-    fn input_event(&mut self, ev: Input) {
+    pub fn clock(&self) -> f64 {
+        self.host.clock
+    }
+
+    fn on_input(&mut self, ev: Input) {
         match ev {
             Input::MouseMove(x, y) => self.pointer = (x, y),
             Input::Button(b, down) => {
@@ -488,9 +384,20 @@ impl Engine {
 
     // ------------------------------------------------------------ ISR, input
 
-    fn isr_tick(&mut self) {
+    fn timer_tick(&mut self) {
+        if self.v102 {
+            let c = self.mem.u8(v102::RAND_COUNTER) + 1;
+            self.mem.set8(v102::RAND_COUNTER, if c > 100 { 0 } else { c });
+        }
         self.sample_mouse();
         let m = &mut self.mem;
+        // The ISR's cursor state machine: 2/4 = erase request -> 3 (hidden),
+        // 5 = redraw request (e.g. from MMOUSE) -> 0 (shown).
+        match m.i16(mo::STATE) {
+            2 | 4 => m.set16(mo::STATE, 3),
+            5 => m.set16(mo::STATE, 0),
+            _ => {}
+        }
         if m.u8(g::PAUSED) == 0 {
             if m.i16(tx::ACTIVE) == 1 && m.i16(tx::TIMER) > 0 {
                 let v = m.i16(tx::TIMER) - 1;
@@ -603,7 +510,7 @@ impl Engine {
     }
 
     fn pass(&mut self) {
-        if self.mem.u8(g::KEY) == 0x39 && self.mem.u8(g::MENU_ON) == 1 {
+        if self.mem.u8(g::KEY) == 0x39 && self.flag_on(g::MENU_ON) {
             self.mem.set8(g::PAUSED, 1);
             crate::menu::run_menu(self);
             self.mem.set8(g::KEY, 0);
@@ -708,11 +615,14 @@ impl Engine {
     /// `flag_addr`.  Returns 0 when the script ended, otherwise non-zero
     /// (1 = yielded; DELAY returns its counter's low byte, like the original).
     /// Blocking commands (SHOWPCX, PLAYFLI, MENU, EXIT) run to completion inline.
-    pub fn run_script(&mut self, base: i32, action_addr: usize, pc_addr: usize, flag_addr: usize) -> i32 {
+    /// `anim` is the animation index when an animation runs, -1 otherwise
+    /// (only RUNDAT v1.02 uses it).
+    pub fn run_script(&mut self, base: i32, action_addr: usize, pc_addr: usize, flag_addr: usize, anim: i32) -> i32 {
         let mut count = 0;
+        let limit = if self.v102 { MAX_OPS_V102 } else { MAX_OPS };
         loop {
             count += 1;
-            if count > MAX_OPS {
+            if count > limit {
                 self.fatal(0x34, "");
             }
             let pc = self.mem.u8(pc_addr);
@@ -937,10 +847,47 @@ impl Engine {
                     self.mem.set8(g::PAUSED, 0);
                 }
                 op::RAND => {
-                    let n = a1 % 100;
-                    let r = (self.random() * n as f64).floor() as i32;
+                    let r = if self.v102 {
+                        // trunc(f32(c * f32(n / 100))), c cycling 0..100 at 50 Hz
+                        let c = self.mem.u8(v102::RAND_COUNTER) as f32;
+                        (c * (a1 as f32 / 100.0)) as i32
+                    } else {
+                        let n = a1 % 100;
+                        (self.random() * n as f64).floor() as i32
+                    };
                     self.mem.set_var(a0, r);
                     next(self, 3);
+                }
+                op::SKIPTO if self.v102 => {
+                    self.mem.set8(g::KEY, 0);
+                    if anim != -1 {
+                        self.mem.set16(v102::ANIM_SKIP + 2 * anim.clamp(0, 49) as usize, raw0);
+                    } else {
+                        self.mem.set16(v102::SKIP_TARGET, raw0);
+                    }
+                    next(self, 2);
+                }
+                op::NOSKIP if self.v102 => {
+                    // QUIRK: word +0x0c of record `anim` = `active` of record anim+1
+                    let i = (anim as i8 as i32 + 1) as usize;
+                    self.mem.set16(ds::ANIMS + i.wrapping_mul(10), -1);
+                    next(self, 1);
+                }
+                op::PXY if self.v102 => {
+                    if a0 != -100 {
+                        let w = self.mem.i16(p::W);
+                        self.mem.set16(p::X, a0 - w / 2);
+                    }
+                    if a1 != -100 {
+                        let h = self.mem.i16(p::H);
+                        self.mem.set16(p::Y, a1 - h);
+                    }
+                    next(self, 3);
+                }
+                op::ISANIM if self.v102 => {
+                    let on = self.mem.i16(ds::ANIMS + (a0 as usize).wrapping_mul(10)) == 1;
+                    self.mem.set16(v102::VAR48_ISANIM, on as i32);
+                    next(self, 2);
                 }
                 op::SEEINV => {
                     // the original's search loop never executes (bug): var 22 is always 0
@@ -1032,17 +979,31 @@ impl Engine {
         }
         for i in 0..50 {
             let a = ds::ANIMS + i * 10;
-            if self.mem.i16(a) != 1 {
-                continue;
+            if self.mem.i16(a) == 1 {
+                let base = self.mem.i16(a + 2);
+                let r = self.run_script(base, g::DUMMY, a + 4, a + 6, i as i32);
+                if r == vm::FINISHED {
+                    self.mem.set16(a + 4, 0);
+                    self.mem.set16(a, 0);
+                }
+                if self.exited {
+                    return;
+                }
             }
-            let base = self.mem.i16(a + 2);
-            let r = self.run_script(base, g::DUMMY, a + 4, a + 6);
-            if r == vm::FINISHED {
-                self.mem.set16(a + 4, 0);
-                self.mem.set16(a, 0);
-            }
-            if self.exited {
-                return;
+            if self.v102 {
+                // SKIPTO: checked for every record, active or not
+                let skip_at = v102::ANIM_SKIP + 2 * i;
+                let skip = self.mem.i16(skip_at);
+                if skip != -1 {
+                    if self.mem.u8(g::KEY) == self.mem.i16(v102::VAR47_SKIP_KEY) {
+                        self.mem.set16(a + 4, skip);
+                        self.mem.set8(g::KEY, 0);
+                    }
+                    if self.mem.i16(a + 4) >= skip {
+                        self.mem.set16(skip_at, -1);
+                        ui::clear_texts(self);
+                    }
+                }
             }
         }
         let t = self.mem.u8(g::ANIM_TICKS);
@@ -1051,6 +1012,21 @@ impl Engine {
 
     fn thing_addr(t: i32) -> usize {
         ds::THINGS + (t as usize) * THING_SIZE
+    }
+
+    /// Name of inventory object `obj` as stored in NIVEL.INV.
+    pub fn object_name(&self, obj: i32) -> Vec<u8> {
+        if obj < 0 || obj as usize >= self.inv_file.count {
+            return Vec::new();
+        }
+        let rec = self.inv_record(obj);
+        let name = &rec[0xfa..0xfa + 30];
+        name[..name.iter().position(|&c| c == 0).unwrap_or(30)].to_vec()
+    }
+
+    /// NIVEL.INV record of `obj` as this build's ADDINV reads it.
+    fn inv_record(&self, obj: i32) -> Vec<u8> {
+        if self.v102 { self.inv_file.record_v102(obj as usize) } else { self.inv_file.record(obj as usize) }
     }
 
     pub fn thing_name(&self, t: i32) -> Vec<u8> {
@@ -1155,9 +1131,28 @@ impl Engine {
                 _ => {}
             },
             _ => {
-                if cur != 0 && self.mem.i16(tx::ACTIVE) == 0 && !walking {
+                if cur == 0 {
+                    return;
+                }
+                if self.v102 && self.mem.i16(v102::SKIP_TARGET) != -1 {
+                    let target = self.mem.i16(v102::SKIP_TARGET);
+                    if self.mem.u8(g::KEY) == self.mem.i16(v102::VAR47_SKIP_KEY) {
+                        self.mem.set8(ds::CUR_ACTION_PC, target);
+                        self.mem.set8(g::KEY, 0);
+                    }
+                    if self.mem.u8(ds::CUR_ACTION_PC) >= target {
+                        // reached or skipped past the label: end texts, stop walking
+                        self.mem.set16(v102::SKIP_TARGET, -1);
+                        ui::clear_texts(self);
+                        self.mem.set16(p::PATH, -100);
+                        self.mem.set16(p::PATH + 2, -100);
+                        self.mem.set8(p::WALKING, 0);
+                    }
+                }
+                let walking = self.mem.u8(p::WALKING) != 0;
+                if self.mem.i16(tx::ACTIVE) == 0 && !walking {
                     let base = self.mem.i16(ds::ACTION_OFFS + 2 * cur as usize);
-                    if self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, g::CMP_FLAG) == vm::FINISHED {
+                    if self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, g::CMP_FLAG, -1) == vm::FINISHED {
                         set(self, 0, 0);
                     }
                 }
@@ -1189,11 +1184,25 @@ impl Engine {
             return;
         }
         let buttons_ok = mode < 2 || mode == 4;
-        if m.u8(inv::OPEN) == 0 && m.i16(mo::Y) <= 0 && m.u8(g::INV_ON) == 1 && buttons_ok && m.u8(inv::PENDING) == 0 {
-            let verb = m.u8(mo::VERB);
+        if m.u8(inv::OPEN) == 0
+            && m.i16(mo::Y) <= 0
+            && self.flag_on(g::INV_ON)
+            && buttons_ok
+            && self.mem.u8(inv::PENDING) == 0
+        {
+            let verb = self.mem.u8(mo::VERB);
             self.mem.set8(inv::OPEN, 1);
             self.mem.set8(mo::SAVED_VERB, verb);
-            if verb != 1 && verb != 3 {
+            if self.v102 {
+                // the panel opens with the verb last used inside it
+                let (iv, look, use_) =
+                    (self.mem.u8(v102::INV_VERB), self.mem.i16(v102::VAR51_LOOK), self.mem.i16(v102::VAR52_USE));
+                if iv != look && iv != use_ {
+                    self.mem.set8(v102::INV_VERB, look);
+                }
+                let iv = self.mem.u8(v102::INV_VERB);
+                self.mouse_action(iv);
+            } else if verb != 1 && verb != 3 {
                 self.mouse_action(1);
             }
             return;
@@ -1201,13 +1210,13 @@ impl Engine {
         let h = self.mem.u8(mo::HOVER);
         self.mem.set8(mo::PREV_HOVER, h);
         self.mem.set8(mo::HOVER, 0);
-        if self.mem.u8(g::THINGS_ON) == 1 {
+        if self.flag_on(g::THINGS_ON) {
             ui::hover(self);
         }
         if self.mem.u8(mo::PREV_HOVER) != self.mem.u8(mo::HOVER) {
             self.mem.set8(bar::STATE, 2);
         }
-        if buttons_ok && self.button(1) && self.mem.u8(g::VERBS_ON) == 1 {
+        if buttons_ok && self.button(1) && self.flag_on(g::VERBS_ON) {
             self.mouse_action(100);
         }
         if self.mem.u8(inv::HELD) == 0xff && self.mem.u8(inv::PENDING) == 0xff {
@@ -1239,7 +1248,8 @@ impl Engine {
         }
         p::stop(&mut self.mem);
         let (held, hov) = (self.mem.u8(inv::HELD), self.mem.u8(mo::HOVER));
-        if held != 0 && !text_on && self.mem.u16(inv::HOVER) == 0 && hov == 0 {
+        let drop = held != 0 && !text_on && self.mem.u16(inv::HOVER) == 0 && hov == 0;
+        if drop && !self.v102 {
             self.mem.set8(inv::HELD, 0);
         }
         if self.mem.u8(inv::HELD) != 1
@@ -1249,6 +1259,12 @@ impl Engine {
             && verb == 0
         {
             p::go_xy(&mut self.mem, hx, hy);
+        }
+        if drop && self.v102 {
+            // v1.02: drop without walking, back to the verb used before the inventory
+            let v = self.mem.u8(mo::SAVED_VERB);
+            self.mouse_action(v);
+            self.mem.set8(inv::HELD, 0);
         }
         if self.mem.u8(inv::HELD) != 0 && !text_on && hov != 0 {
             self.mem.set8(inv::SECOND, 100);
@@ -1302,6 +1318,11 @@ impl Engine {
             if mode == 0 {
                 continue;
             }
+            if self.v102 {
+                // v1.02: the cursor goes back to the verb used before the inventory
+                let v = self.mem.u8(mo::SAVED_VERB);
+                self.mouse_action(v);
+            }
             if (iv == o || iv == -100) && (th == t || th == -100) {
                 let res = self.mem.i16(a + 6);
                 self.mem.set8(inv::RESULT, res);
@@ -1324,6 +1345,10 @@ impl Engine {
             }
         }
         if !found {
+            if self.v102 {
+                let v = self.mem.u8(mo::SAVED_VERB);
+                self.mouse_action(v);
+            }
             self.mem.set8(inv::RESULT, 0);
             self.mem.set8(ds::CUR_ACTION, 102);
             self.mem.set8(ds::CUR_ACTION_PC, 0);
@@ -1339,6 +1364,10 @@ impl Engine {
             let a = g::IAC + i * 10;
             if self.mem.i16(a) != 1 {
                 continue;
+            }
+            if self.v102 {
+                let v = self.mem.u8(mo::SAVED_VERB);
+                self.mouse_action(v);
             }
             let (oa, ob, res, mode) =
                 (self.mem.i16(a + 2), self.mem.i16(a + 4), self.mem.i16(a + 6), self.mem.i16(a + 8));
@@ -1358,16 +1387,30 @@ impl Engine {
     }
 
     pub fn mouse_action(&mut self, n: i32) {
+        let v102 = self.v102;
         let m = &mut self.mem;
         let mut v = if n == 100 { m.u8(mo::VERB) + 1 } else { n };
-        if v > 4 && v != 101 {
-            v = 0;
-        }
-        if v == 101 {
-            v = 5;
+        if v102 {
+            // cycles through var50 verbs, no other clamping
+            if n == 100 && v >= m.i16(v102::VAR50_VERBS) {
+                v = 0;
+            }
+        } else {
+            if v > 4 && v != 101 {
+                v = 0;
+            }
+            if v == 101 {
+                v = 5;
+            }
         }
         m.set8(mo::VERB, v);
-        let r = mo::TABLE + v as usize * 12;
+        let v = m.u8(mo::VERB);
+        // v1.02 has 10 cursors; entries 6..9 live outside the demo's table
+        let r = if v102 && (6..10).contains(&v) {
+            v102::CURSORS_6_9 + (v - 6) as usize * 12
+        } else {
+            mo::TABLE + v as usize * 12
+        };
         let (old_hx, old_hy) = (m.i16(mo::HOTX), m.i16(mo::HOTY));
         let nx = m.i16(mo::X) + old_hx - m.i16(r + 8);
         let ny = m.i16(mo::Y) + old_hy - m.i16(r + 10);
@@ -1552,7 +1595,7 @@ impl Engine {
     /// Rebuild the frame: background, things, player, texts, info bar, panels.
     pub fn compose(&mut self) {
         self.vga.copy_from_slice(&self.bg);
-        let things_on = self.mem.u8(g::THINGS_ON) == 1;
+        let things_on = self.flag_on(g::THINGS_ON);
         let layer = |e: &mut Self, front: bool| {
             for k in 0..30 {
                 let t = e.mem.i8(ds::THING_ORDER + k);
@@ -1603,10 +1646,18 @@ impl Engine {
             let movs_name = m.slice(ds::GFX_NAMES + 26, 13);
             let movs_tab = m.slice(ds::GFX_TAB + 16, 8);
             let n = m.u8(ds::LEVEL) as usize;
-            let packed = self.game.is_packed();
+            let (packed, format) = (self.game.is_packed(), self.game.level_format());
             let Some((bytes, off)) = self.game.level(n) else { self.fatal(0x65, &n.to_string()) };
-            match load_level(&mut self.mem, bytes, off, packed) {
-                Ok(l) => self.code = l.code,
+            match load_level(&mut self.mem, bytes, off, packed, format) {
+                Ok(l) => {
+                    self.code = l.code;
+                    if self.v102 {
+                        // the skip targets: word +0x0a of each 12-byte record
+                        for (i, r) in l.anims.chunks_exact(12).enumerate() {
+                            self.mem.set16(v102::ANIM_SKIP + 2 * i, i16::from_le_bytes([r[10], r[11]]) as i32);
+                        }
+                    }
+                }
                 Err(e) => self.fail(e),
             }
             if n == 0 {
@@ -1696,7 +1747,7 @@ impl Engine {
             return;
         }
         for _ in 0..100_000 {
-            let r = self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, g::CMP_FLAG);
+            let r = self.run_script(base, ds::CUR_ACTION, ds::CUR_ACTION_PC, g::CMP_FLAG, -1);
             if r == vm::FINISHED || self.exited {
                 return;
             }
@@ -1864,7 +1915,7 @@ impl Engine {
             self.mem.set16(a + 2, obj);
             self.mem.set8(a, 1);
             self.mem.set8(a + 1, 0);
-            let rec = self.inv_file.record(obj as usize);
+            let rec = self.inv_record(obj);
             self.inv_records[s * INV_RECORD..(s + 1) * INV_RECORD].copy_from_slice(&rec);
             return;
         }
@@ -1934,8 +1985,14 @@ impl Engine {
         if n < 0 || n as usize >= self.mou_file.count {
             self.fatal(0x74, &n.to_string());
         }
-        let rec = self.mou_file.record(n as usize);
-        self.mem.write(mo::TABLE, &rec);
+        if self.v102 {
+            let rec = self.mou_file.record_v102(n as usize);
+            self.mem.write(mo::TABLE, &rec[..0x48]);
+            self.mem.write(v102::CURSORS_6_9, &rec[0x48..]);
+        } else {
+            let rec = self.mou_file.record(n as usize);
+            self.mem.write(mo::TABLE, &rec);
+        }
         self.mouse_action(0);
     }
 
@@ -2003,9 +2060,16 @@ impl Engine {
         if self.music_name.as_deref() == Some(&name[..]) && self.mem.u8(g::MUSIC_ON) == 1 {
             return;
         }
-        let bytes = self.file_bytes(file).unwrap_or_else(|| self.fatal(0x68, &self.file_name(file)));
+        // In EDGAME.DAT a FILE slot with no file has offset and size 0: the
+        // original's loadfile (0xc240) then reads nothing and succeeds, so the
+        // tune already in the CMF buffer starts again (El Dios de Nauru relies
+        // on this). Loose files are opened by name and fail.
+        let empty = self.game.is_packed() && (0..20).contains(&file) && file_entry(&self.mem, file as usize).size == 0;
+        if !empty {
+            self.cmf = self.file_bytes(file).unwrap_or_else(|| self.fatal(0x68, &self.file_name(file)));
+        }
         self.music_name = Some(name);
-        let _ = self.mixer.lock().unwrap().play_music(&bytes);
+        let _ = self.mixer.lock().unwrap().play_music(&self.cmf);
         self.mem.set8(g::MUSIC_ON, 1);
     }
 
@@ -2039,7 +2103,7 @@ impl Engine {
         self.fade_to(&pal6);
         self.mem.set8(g::KEY, 0);
         let ms = secs as f64 * 1000.0;
-        let start = self.clock;
+        let start = self.clock();
         let any_input = |e: &mut Self| {
             let (l, r) = (e.button(0), e.button(1));
             l || r || e.key() != 0
@@ -2051,17 +2115,17 @@ impl Engine {
                 }
             }
             1 => {
-                while self.clock - start < ms {
+                while self.clock() - start < ms {
                     self.wait(PASS_MS);
                 }
             }
             2 => {
-                while !any_input(self) && self.clock - start < ms {
+                while !any_input(self) && self.clock() - start < ms {
                     self.wait(PASS_MS);
                 }
             }
             3 => {
-                while self.clock - start < ms {
+                while self.clock() - start < ms {
                     self.wait(PASS_MS);
                 }
                 while !any_input(self) {
@@ -2097,7 +2161,7 @@ impl Engine {
         let mut dec = FliDecoder::new(bytes)
             .unwrap_or_else(|_| self.fail(Error::new(format!("El archivo '{name}' no es un .FLI"))));
         let frame_ms = ((spd * 50 / 70) + (spd > 0) as i32) as f64 * TICK_MS;
-        let (start, total) = (self.clock, secs as f64 * 1000.0);
+        let (start, total) = (self.clock(), secs as f64 * 1000.0);
         self.mem.set8(g::KEY, 0);
         'outer: loop {
             dec.rewind();
@@ -2121,11 +2185,11 @@ impl Engine {
                 self.wait(if frame_ms > 0.0 { frame_ms } else { TICK_MS });
             }
             if mode == 11 {
-                while self.clock - start < total {
+                while self.clock() - start < total {
                     self.wait(PASS_MS);
                 }
             }
-            if (7..=10).contains(&mode) && self.clock - start < total || (4..=6).contains(&mode) {
+            if (7..=10).contains(&mode) && self.clock() - start < total || (4..=6).contains(&mode) {
                 continue;
             }
             break;
@@ -2275,52 +2339,30 @@ pub fn blit(dst: &mut [u8], src: &[u8], sx: i32, sy: i32, dx: i32, dy: i32, w: i
     }
 }
 
-/// Host-side handle to an engine running on its own thread.
-pub struct EngineHandle {
-    tx: Sender<ToEngine>,
-    rx: Receiver<Frame>,
-    thread: Option<JoinHandle<()>>,
-    /// shared with the audio output
-    pub mixer: Arc<Mutex<Mixer>>,
-    /// set once the game has ended (EXIT, quit from the menu, or an error)
-    pub finished: bool,
-    pub error: Option<String>,
-}
+/// Host-side handle to a v2 engine running on its own thread.
+pub type EngineHandle = host::EngineHandle<Engine>;
 
-impl EngineHandle {
-    /// Advance emulated time to `now` (ms, any monotonic origin), delivering
-    /// `events` first; returns the resulting frame.
-    pub fn advance(&mut self, now: f64, events: Vec<Input>) -> Option<Frame> {
-        self.tx.send(ToEngine::Advance { now, events }).ok()?;
-        let f = self.rx.recv().ok()?;
-        if f.exited {
-            self.finished = true;
-            if f.error.is_some() {
-                self.error = f.error.clone();
-            }
-        }
-        Some(f)
+impl Core for Engine {
+    fn host(&mut self) -> &mut Host<Self> {
+        &mut self.host
     }
-
-    /// Run `job` on the engine while it is paused (inspection, tests, saving).
-    pub fn with<R: Send + 'static>(&mut self, job: impl FnOnce(&mut Engine) -> R + Send + 'static) -> Option<R> {
-        let (tx, rx) = channel();
-        self.tx
-            .send(ToEngine::With(Box::new(move |e| {
-                let _ = tx.send(job(e));
-            })))
-            .ok()?;
-        rx.recv().ok()
+    fn tick_ms(&self) -> f64 {
+        TICK_MS
     }
-}
-
-impl Drop for EngineHandle {
-    fn drop(&mut self) {
-        // Closing the channel makes the engine thread unwind and exit.
-        let (tx, _) = channel();
-        drop(std::mem::replace(&mut self.tx, tx));
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
+    fn isr_tick(&mut self) {
+        self.timer_tick()
+    }
+    fn input_event(&mut self, ev: Input) {
+        self.on_input(ev)
+    }
+    fn frame(&mut self, error: Option<String>) -> Frame {
+        self.present();
+        Frame { screen: self.screen.clone(), palette: self.palette.to_vec(), exited: self.exited, error }
+    }
+    fn run(&mut self) {
+        self.main_loop()
+    }
+    fn set_exited(&mut self) {
+        self.exited = true;
     }
 }

@@ -131,7 +131,8 @@ impl Painter<'_> {
     fn save(&mut self, slot: usize, name: &[u8]) {
         self.e.mouse_action(self.saved_verb);
         self.e.save_state(slot, name);
-        self.e.mouse_action(101);
+        let c = self.e.menu_cursor();
+        self.e.mouse_action(c);
     }
 
     fn load_dialog(&mut self, scene: &[u8]) -> bool {
@@ -249,7 +250,8 @@ impl Painter<'_> {
 pub fn run_menu(e: &mut Engine) {
     let saved_verb = e.mem.u8(mo::VERB);
     let saved_mode = e.mem.i16(mo::MODE);
-    e.mouse_action(101);
+    let c = e.menu_cursor();
+    e.mouse_action(c);
     let scene = e.vga.clone();
     let mut pt = Painter { e, saved_verb };
     let mut done = false;

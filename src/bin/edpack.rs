@@ -22,26 +22,27 @@ use edpack::Error;
 use edpack::audio::Mixer;
 use edpack::engine::{DirStorage, Engine, Input, Key as GameKey, Options};
 use edpack::game::Game;
+use edpack::host::{Core, EngineHandle};
 use minifb::{InputCallback, Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 
 struct Args {
     game: Option<PathBuf>,
     scale: usize,
-    speed: usize,
-    text_speed: usize,
+    speed: Option<usize>,
+    text_speed: Option<usize>,
     mute: bool,
     saves: Option<PathBuf>,
 }
 
 fn parse_args() -> Args {
-    let mut a = Args { game: None, scale: 3, speed: 2, text_speed: 3, mute: false, saves: None };
+    let mut a = Args { game: None, scale: 3, speed: None, text_speed: None, mute: false, saves: None };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         let mut num = |max: usize| it.next().and_then(|v| v.parse::<usize>().ok()).filter(|&v| v <= max);
         match arg.as_str() {
             "--scale" => a.scale = num(8).unwrap_or(3).max(1),
-            "--speed" => a.speed = num(4).unwrap_or(2),
-            "--text-speed" => a.text_speed = num(4).unwrap_or(3),
+            "--speed" => a.speed = num(4),
+            "--text-speed" => a.text_speed = num(4),
             "--mute" => a.mute = true,
             "--saves" => a.saves = it.next().map(PathBuf::from),
             "-h" | "--help" => {
@@ -228,17 +229,49 @@ fn main() {
     }
 }
 
+/// Speed and text speed: the command line, else the game's SETUP.CFG (bytes
+/// 1 and 2, as the original reads them), else the defaults 2 and 3.
+fn speeds(args: &Args) -> (usize, usize) {
+    let cfg = args.game.as_ref().and_then(|g| {
+        let dir = if g.is_dir() { g.as_path() } else { g.parent()? };
+        let e = std::fs::read_dir(dir).ok()?.flatten().find(|e| e.file_name().eq_ignore_ascii_case("SETUP.CFG"))?;
+        let b = std::fs::read(e.path()).ok()?;
+        Some(((*b.get(1)? as usize).min(4), (*b.get(2)? as usize).min(4)))
+    });
+    (args.speed.or(cfg.map(|c| c.0)).unwrap_or(2), args.text_speed.or(cfg.map(|c| c.1)).unwrap_or(3))
+}
+
 fn run(args: Args) -> Result<(), Error> {
+    let (speed, text_speed) = speeds(&args);
+    let storage = Box::new(DirStorage(saves_dir(&args.saves)));
+    // EDPACK v1 games (RUNVGA.EXE: RESOURCE.DAT or <base>.nnn files)
+    if let Some(path) = &args.game
+        && let Some(src) = edpack::v1::data::Source::open(path)
+    {
+        let name = path
+            .canonicalize()
+            .ok()
+            .and_then(|p| if p.is_file() { p.parent().map(|d| d.to_path_buf()) } else { Some(p) })
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "edpack-v1".into());
+        let opts = edpack::v1::Options { speed, text_speed };
+        let mut engine = edpack::v1::Engine::new(src, storage, opts)?;
+        engine.save_prefix = name.clone();
+        return play(engine.spawn(), &format!("EDPACK — {name}"), &args);
+    }
     let game = load_game(&args.game)?;
-    let opts = Options { speed: args.speed, text_speed: args.text_speed, ..Options::default() };
-    let engine = Engine::new(game, Box::new(DirStorage(saves_dir(&args.saves))), opts)?;
+    let opts = Options { speed, text_speed, ..Options::default() };
+    let engine = Engine::new(game, storage, opts)?;
     let title = format!("EDPACK — {}", edpack::cp850_to_string(&engine.title));
-    let mut handle = engine.spawn();
+    play(engine.spawn(), &title, &args)
+}
+
+fn play<E: Core>(mut handle: EngineHandle<E>, title: &str, args: &Args) -> Result<(), Error> {
     let _audio = start_audio(handle.mixer.clone(), args.mute);
 
     let (w, h) = (320 * args.scale, 240 * args.scale); // 4:3, like a 320x200 VGA mode on a CRT
     let mut window =
-        Window::new(&title, w, h, WindowOptions::default()).map_err(|e| Error::new(format!("ventana: {e}")))?;
+        Window::new(title, w, h, WindowOptions::default()).map_err(|e| Error::new(format!("ventana: {e}")))?;
     window.set_target_fps(60);
     window.set_cursor_visibility(false);
     let chars = Arc::new(Mutex::new(Vec::new()));

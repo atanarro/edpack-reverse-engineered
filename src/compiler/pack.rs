@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::Error;
 use crate::dat::Special;
-use crate::level::{file_entry, gfx_entry, load_level};
+use crate::level::{LevelFormat, file_entry, gfx_entry, load_level};
 use crate::memory::Memory;
 
 pub fn pack_game(files: &BTreeMap<String, Vec<u8>>, levels: usize) -> Result<Vec<u8>, Error> {
@@ -23,7 +23,7 @@ pub fn pack_game(files: &BTreeMap<String, Vec<u8>>, levels: usize) -> Result<Vec
         let lname = format!("NIVEL.{n:03}");
         let Some(file) = get(&lname) else { continue };
         let mut mem = Memory::new();
-        let end = load_level(&mut mem, file, 0, false)?.end;
+        let end = load_level(&mut mem, file, 0, false, LevelFormat::Shareware)?.end;
         table[n] = out.len() as u32;
         out.extend(&file[..end]); // the offset tables must follow the last block
         let tables_at = out.len();

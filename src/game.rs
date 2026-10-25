@@ -7,7 +7,7 @@ use std::path::Path;
 use crate::Error;
 use crate::compiler::compile_project;
 use crate::dat::{GameArchive, Special};
-use crate::level::FileEntry;
+use crate::level::{FileEntry, LevelFormat, detect_format};
 
 pub enum Game {
     Packed(GameArchive),
@@ -38,11 +38,20 @@ impl Game {
         }
     }
 
+    /// The layout of this game's compiled levels.
+    pub fn level_format(&self) -> LevelFormat {
+        let levels = || (0..1000).filter_map(move |n| self.level(n));
+        match self {
+            Game::Packed(a) => *a.format.get_or_init(|| detect_format(levels(), true)),
+            Game::Loose(_) => detect_format(levels(), false),
+        }
+    }
+
     /// A global compiled file (the font is returned raw, offset 0).
     pub fn special(&self, s: Special) -> Option<(&[u8], usize)> {
         match self {
             Game::Packed(a) if s == Special::Fnt => a.special_raw(s).map(|b| (b, 0)),
-            Game::Packed(a) => match a.entry(s.index()) {
+            Game::Packed(a) => match a.special_offset(s) {
                 0 => None,
                 off => Some((&a.bytes[..], off)),
             },

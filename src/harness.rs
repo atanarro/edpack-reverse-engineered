@@ -2,11 +2,16 @@
 //!
 //! Script commands, separated by `;` or newlines (`#` starts a comment):
 //! ```text
-//! wait <ms> | waitidle | shot <name> | state | move <x> <y> | click <x> <y> | rclick
+//! wait <ms> | waitidle | shot <name> | state | look | move <x> <y> | click <x> <y> | rclick | choose <n>
 //! key <scancode> | type <text> | enter | verb <n> | do <verb> <x> <y> | use <obj> <x> <y> | combine <a> <b>
 //! level <n> [door] | save <slot> <name> | load <slot>
 //! expect inv|noinv <obj> | expect level <n> | expect var <n> <value> | expect exited
 //! ```
+//!
+//! Wherever a command takes `<x> <y>` it also accepts the name of a thing on
+//! screen (`do 3 llave verde`, or `@n` for thing n), resolved to a point where
+//! the cursor selects that thing; `<obj>` accepts an inventory object's name instead of its
+//! number. Names match case-insensitively, ignoring accents' absence.
 
 use crate::Error;
 use crate::engine::{Engine, EngineHandle, Frame, Input, MemStorage, Options};
@@ -115,6 +120,10 @@ impl Harness {
         self.handle
             .with(|e| {
                 let m = &e.mem;
+                // A dialogue choice on screen waits for the player: idle.
+                if m.i16(0xfcf0) != -1 && m.u8(0x1bbd) != 0 && m.i16(0xfca9) == 0 {
+                    return false;
+                }
                 m.u8(ds::CUR_ACTION) != 0
                     || m.i16(0xfca9) != 0
                     || m.u8(0xfcce) != 0
@@ -144,6 +153,9 @@ impl Harness {
         while s >= self.u8(0xfccc) as usize + 8 {
             self.click(315, 15)?;
         }
+        while s < self.u8(0xfccc) as usize {
+            self.click(5, 15)?;
+        }
         let x = (s as i32 - self.u8(0xfccc)) * 37 + 30;
         self.mv(x, 15, 200.0)?;
         self.click(x, 15)?;
@@ -152,6 +164,88 @@ impl Harness {
             return Err(Error::new(format!("no se pudo coger el objeto {obj}")));
         }
         Ok(())
+    }
+
+    /// Hoverable things on screen: (index, name, rect).
+    pub fn things(&mut self) -> Vec<(usize, String, [i32; 4])> {
+        self.handle
+            .with(|e| {
+                let m = &e.mem;
+                (0..30)
+                    .filter_map(|k| {
+                        let t = m.i8(ds::THING_ORDER + k);
+                        if !(0..30).contains(&t) {
+                            return None;
+                        }
+                        let a = ds::THINGS + t as usize * crate::memory::THING_SIZE;
+                        let md = m.u8(a + 0x2b);
+                        (md == 1 || md == 3).then(|| {
+                            let name = crate::cp850_to_string(&e.thing_name(t));
+                            (t as usize, name, [m.i16(a), m.i16(a + 2), m.i16(a + 4), m.i16(a + 6)])
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// A screen point where the cursor selects the thing called `name`.
+    fn thing_point(&mut self, name: &str) -> Result<(i32, i32), Error> {
+        let things = self.things();
+        let want = fold(name);
+        let index = name.strip_prefix('@').and_then(|n| n.parse::<usize>().ok());
+        let Some(&(t, _, _)) = things
+            .iter()
+            .find(|(t, n, _)| index.map_or(fold(n) == want, |i| *t == i))
+            .or_else(|| things.iter().find(|(_, n, _)| fold(n).contains(&want)))
+        else {
+            let names: Vec<&str> = things.iter().map(|(_, n, _)| n.as_str()).collect();
+            return Err(Error::new(format!("no hay ninguna cosa '{name}' en pantalla ({})", names.join(", "))));
+        };
+        // Same test as the original's hover: the first thing in draw order
+        // whose rectangle contains the hotspot wins.
+        let pick = |x: i32, y: i32| {
+            things.iter().find(|(_, _, r)| r[0] <= x && x <= r[0] + r[2] && r[1] <= y && y <= r[1] + r[3]).map(|t| t.0)
+        };
+        let r = things.iter().find(|x| x.0 == t).unwrap().2;
+        let (cx, cy) = (r[0] + r[2] / 2, r[1] + r[3] / 2);
+        let mut best: Option<(i32, i32, i32)> = None;
+        for y in r[1].max(0)..=(r[1] + r[3]).min(199) {
+            for x in r[0].max(0)..=(r[0] + r[2]).min(319) {
+                if pick(x, y) == Some(t) {
+                    let d = (x - cx).abs() + (y - cy).abs();
+                    if best.is_none_or(|b| d < b.2) {
+                        best = Some((x, y, d));
+                    }
+                }
+            }
+        }
+        best.map(|b| (b.0, b.1)).ok_or_else(|| Error::new(format!("'{name}' está tapada por otras cosas")))
+    }
+
+    /// Inventory object number by number or name.
+    fn object(&mut self, arg: &str) -> Result<i32, Error> {
+        if let Ok(n) = arg.parse() {
+            return Ok(n);
+        }
+        let want = fold(arg);
+        let held: Vec<i32> = self
+            .handle
+            .with(|e| (0..30).filter(|&s| e.mem.u8(0x8a95 + s * 6) != 0).map(|s| e.mem.i16(0x8a97 + s * 6)).collect())
+            .unwrap_or_default();
+        let names: Vec<(i32, String)> = held
+            .into_iter()
+            .map(|o| (o, self.handle.with(move |e| crate::cp850_to_string(&e.object_name(o))).unwrap_or_default()))
+            .collect();
+        names
+            .iter()
+            .find(|(_, n)| fold(n) == want)
+            .or_else(|| names.iter().find(|(_, n)| fold(n).contains(&want)))
+            .map(|o| o.0)
+            .ok_or_else(|| {
+                let l: Vec<&str> = names.iter().map(|(_, n)| n.as_str()).collect();
+                Error::new(format!("no llevo ningún objeto '{arg}' ({})", l.join(", ")))
+            })
     }
 
     pub fn state(&mut self) -> String {
@@ -176,6 +270,20 @@ impl Harness {
                 )
             })
             .unwrap_or_default()
+    }
+
+    /// `<x> <y>` or a thing name in `parts[from..]`.
+    fn point(&mut self, parts: &[&str], from: usize) -> Result<(i32, i32), Error> {
+        let rest = &parts[from.min(parts.len())..];
+        if let [x, y] = rest
+            && let (Ok(x), Ok(y)) = (x.parse(), y.parse())
+        {
+            return Ok((x, y));
+        }
+        if rest.is_empty() {
+            return Err(Error::new(format!("falta el destino en '{}'", parts.join(" "))));
+        }
+        self.thing_point(&rest.join(" "))
     }
 
     pub fn run(&mut self, script: &str) -> Result<(), Error> {
@@ -204,9 +312,56 @@ impl Harness {
                     cb(parts.get(1).copied().unwrap_or("shot"), f);
                 }
             }
-            "move" => self.mv(n(1)?, n(2)?, 50.0)?,
-            "click" => self.click(n(1)?, n(2)?)?,
+            "move" => {
+                let (x, y) = self.point(&parts, 1)?;
+                self.mv(x, y, 50.0)?
+            }
+            "click" => {
+                let (x, y) = self.point(&parts, 1)?;
+                self.click(x, y)?
+            }
+            "look" => {
+                let mut out = Vec::new();
+                for (t, name, r) in self.things() {
+                    let acts = self
+                        .handle
+                        .with(move |e| {
+                            let a = ds::THINGS + t * crate::memory::THING_SIZE + 0x48;
+                            (0..5).map(|k| e.mem.i16(a + 2 * k)).collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    out.push(format!("  cosa {t} '{name}' {r:?} acciones {acts:?}"));
+                }
+                let inv: Vec<i32> = self
+                    .handle
+                    .with(|e| {
+                        (0..30).filter(|&s| e.mem.u8(0x8a95 + s * 6) != 0).map(|s| e.mem.i16(0x8a97 + s * 6)).collect()
+                    })
+                    .unwrap_or_default();
+                for o in inv {
+                    let name = self.handle.with(move |e| crate::cp850_to_string(&e.object_name(o))).unwrap_or_default();
+                    out.push(format!("  objeto {o} '{name}'"));
+                }
+                let msg = format!("{}\n{}", self.state(), out.join("\n"));
+                (self.log)(&msg);
+            }
             "rclick" => self.rclick()?,
+            "choose" => {
+                // choose <n>: the n-th line (1..5, as defined in SELECTEXT) of the dialogue on screen
+                let row = n(1)? - 1;
+                let y = self
+                    .handle
+                    .with(move |e| {
+                        let m = &e.mem;
+                        let visible = m.i16(0xfcf0) != -1 && (0..5).contains(&row) && m.u8(0xfbd8 + row as usize) == 0;
+                        visible.then(|| m.i16(0xfd05) + m.i16(0xfbce + row as usize * 2) + 5)
+                    })
+                    .flatten()
+                    .ok_or_else(|| Error::new(format!("no hay opción {} en pantalla", row + 1)))?;
+                self.mv(160, y, 100.0)?;
+                self.click(160, y)?;
+                self.wait_idle()?;
+            }
             "type" => {
                 for c in parts[1..].join(" ").chars() {
                     self.input(Input::KeyDown(0, Some(crate::engine::Key::Char(c))));
@@ -227,21 +382,34 @@ impl Harness {
             }
             "verb" => self.set_verb(n(1)?)?,
             "do" => {
-                self.mv(n(2)?, n(3)?, 100.0)?;
+                let (x, y) = self.point(&parts, 2)?;
+                self.mv(x, y, 100.0)?;
                 self.set_verb(n(1)?)?;
-                self.click(n(2)?, n(3)?)?;
+                self.click(x, y)?;
                 self.wait_idle()?;
             }
             "use" => {
-                self.pick_up(n(1)?)?;
-                self.mv(n(2)?, n(3)?, 300.0)?;
-                self.click(n(2)?, n(3)?)?;
+                // use <obj> <target>: the object is one word (number or name)
+                let obj = self.object(parts.get(1).copied().unwrap_or(""))?;
+                let (x, y) = self.point(&parts, 2)?;
+                self.pick_up(obj)?;
+                // leave the inventory panel first (it stays open while the
+                // cursor is in it), then go to the target
+                self.mv(x, 100, 200.0)?;
+                self.mv(x, y, 300.0)?;
+                self.click(x, y)?;
                 self.wait_idle()?;
             }
             "combine" => {
-                self.pick_up(n(1)?)?;
-                let s = self.slot_of(n(2)?).ok_or_else(|| Error::new("objeto no encontrado"))?;
-                let x = (s as i32 - self.u8(0xfccc)) * 37 + 30;
+                let a = self.object(parts.get(1).copied().unwrap_or(""))?;
+                let b = self.object(parts.get(2).copied().unwrap_or(""))?;
+                self.pick_up(a)?;
+                let s = self.slot_of(b).ok_or_else(|| Error::new("objeto no encontrado"))?;
+                let col = s as i32 - self.u8(0xfccc);
+                if !(0..8).contains(&col) {
+                    return Err(Error::new(format!("el objeto {b} no se ve en el inventario")));
+                }
+                let x = col * 37 + 30;
                 self.mv(x, 15, 200.0)?;
                 self.click(x, 15)?;
                 self.step(100.0)?;
@@ -289,4 +457,21 @@ impl Harness {
         }
         Ok(())
     }
+}
+
+/// Lower-case, without accents, for name matching.
+fn fold(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'á' | 'à' | 'Á' | 'À' => 'a',
+            'é' | 'è' | 'É' | 'È' => 'e',
+            'í' | 'ì' | 'Í' | 'Ì' => 'i',
+            'ó' | 'ò' | 'Ó' | 'Ò' => 'o',
+            'ú' | 'ù' | 'ü' | 'Ú' | 'Ù' | 'Ü' => 'u',
+            'ñ' | 'Ñ' => 'n',
+            c => c.to_ascii_lowercase(),
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
 }

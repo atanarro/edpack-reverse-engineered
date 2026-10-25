@@ -78,7 +78,39 @@ pub const USER_VARS_BASE: usize = 0x10000;
 /// Variables without a pointer in the original table point at the same
 /// uninitialised far pointer; they share one scratch word here.
 pub const SCRATCH_VAR_ADDR: usize = USER_VARS_BASE + 2000 * 2;
-pub const MEMORY_SIZE: usize = 0x10000 + 2000 * 2 + 16;
+/// State that later RUNDAT builds keep and the demo's data segment has no
+/// room for (see [`v102`]).
+pub const EXT_BASE: usize = SCRATCH_VAR_ADDR + 16;
+pub const MEMORY_SIZE: usize = EXT_BASE + 0x100;
+
+/// RUNDAT v1.02 additions, in the extension area
+/// (docs/reverse-engineering/07-rundat-versions.md §4).
+pub mod v102 {
+    use super::EXT_BASE;
+    /// 50 x i16: the animations' skip targets (record word +0x0a), -1 = none.
+    pub const ANIM_SKIP: usize = EXT_BASE;
+    /// i16: skip target of the running action (SKIPTO outside animations).
+    pub const SKIP_TARGET: usize = EXT_BASE + 100;
+    /// u8: cycles 0..100 at 50 Hz, read by RAND.
+    pub const RAND_COUNTER: usize = EXT_BASE + 102;
+    /// u8: the verb last used inside the inventory panel.
+    pub const INV_VERB: usize = EXT_BASE + 103;
+    pub const VAR47_SKIP_KEY: usize = EXT_BASE + 104;
+    pub const VAR48_ISANIM: usize = EXT_BASE + 106;
+    pub const VAR50_VERBS: usize = EXT_BASE + 108;
+    pub const VAR51_LOOK: usize = EXT_BASE + 110;
+    pub const VAR52_USE: usize = EXT_BASE + 112;
+    pub const VAR53_MENU_CURSOR: usize = EXT_BASE + 114;
+    pub const VAR54_ARROW_CURSOR: usize = EXT_BASE + 116;
+    /// vars 28..32 as independent words (the demo's byte flags fd04, fd01, fcff, fcfe, fd03).
+    pub const VAR28_MENU: usize = EXT_BASE + 118;
+    pub const VAR29_BAR: usize = EXT_BASE + 120;
+    pub const VAR30_HOVER: usize = EXT_BASE + 122;
+    pub const VAR31_INV: usize = EXT_BASE + 124;
+    pub const VAR32_VERBS: usize = EXT_BASE + 126;
+    /// cursor table entries 6..9 (12 bytes each; 0..5 stay at the demo's table).
+    pub const CURSORS_6_9: usize = EXT_BASE + 128;
+}
 
 #[derive(Clone)]
 pub struct Memory {
@@ -94,6 +126,11 @@ impl Default for Memory {
 
 impl Memory {
     pub fn new() -> Self {
+        Memory::with_vars(Self::v2_vars())
+    }
+
+    /// The variable table of RUNDAT v1.0 (shareware and registered).
+    pub fn v2_vars() -> Vec<usize> {
         let mut var_addr = vec![SCRATCH_VAR_ADDR; 2000];
         for (n, &a) in GLOBAL_VAR_ADDR.iter().enumerate() {
             var_addr[n] = a;
@@ -103,10 +140,42 @@ impl Memory {
                 var_addr[100 + t * 30 + v] = ds::THINGS + t * THING_SIZE + off;
             }
         }
+        var_addr
+    }
+
+    /// RUNDAT v1.02: vars 28..32 become separate words, 47..54 are new
+    /// (49 is the walking flag at fcce).
+    pub fn v102_vars() -> Vec<usize> {
+        let mut v = Self::v2_vars();
+        v[28] = v102::VAR28_MENU;
+        v[29] = v102::VAR29_BAR;
+        v[30] = v102::VAR30_HOVER;
+        v[31] = v102::VAR31_INV;
+        v[32] = v102::VAR32_VERBS;
+        v[47] = v102::VAR47_SKIP_KEY;
+        v[48] = v102::VAR48_ISANIM;
+        v[49] = 0xfcce;
+        v[50] = v102::VAR50_VERBS;
+        v[51] = v102::VAR51_LOOK;
+        v[52] = v102::VAR52_USE;
+        v[53] = v102::VAR53_MENU_CURSOR;
+        v[54] = v102::VAR54_ARROW_CURSOR;
+        v
+    }
+
+    /// Memory with a custom variable table (variable n -> address of its
+    /// word); variables 1000..1999 always map to the user-variable buffer.
+    pub fn with_vars(mut var_addr: Vec<usize>) -> Self {
+        var_addr.resize(2000, SCRATCH_VAR_ADDR);
         for (n, slot) in var_addr.iter_mut().enumerate().skip(1000) {
             *slot = USER_VARS_BASE + (n - 1000) * 2;
         }
         Memory { bytes: vec![0; MEMORY_SIZE], var_addr }
+    }
+
+    /// Address of variable n's word.
+    pub fn var_addr(&self, n: i32) -> Option<usize> {
+        self.var_addr.get(usize::try_from(n).ok()?).copied()
     }
 
     #[inline]

@@ -15,13 +15,13 @@
 
 # EDPACK v2.0 reverse-engineering notes (shared context)
 
-Repo: /home/alvaro/Projects/ED  (read-only original files; do NOT modify)
+Files of the original EDPACK v2.0 kit (not part of this repository):
 - MANUAL.TXT (Spanish, cp1252) — language manual. UTF-8 copy: SCRATCH/manual.txt
 - FUENTES/*.ED — source of the demo game "Peter's Adventure I"; FUENTES/*.PCX/*.CMF/*.FNT/*.FLI assets
 - DEMO/EDGAME.DAT — packed compiled game (same game as FUENTES). RUNDAT.EXE = interpreter for EDGAME.DAT.
 - ED.DAT — compiler command table: 24-byte records {char name[20]; u16 opcode; u16 argc}
 
-SCRATCH = /tmp/claude-1000/-home-alvaro-Projects-ED/2b0171bc-d27c-4e5b-8fb4-cf107bb5d10b/scratchpad
+SCRATCH = the temporary analysis workspace (not kept)
 - SCRATCH/RUNDAT.bin, RUNFILES.bin, ED.bin, ED2DAT.bin : unpacked memory images (image loaded at linear 0;
   i.e. file offset == linear address relative to load segment). Borland C++ 1991, 80186 instructions.
 - CODE: single near code segment at linear 0 (CS-relative offset == linear address for code < 0x10000).

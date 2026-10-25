@@ -1,0 +1,157 @@
+# Full solution of "Dadton Aguinández" (Coctel Software, EDPACK v2 with RUNDAT
+# v1.02), worked out from the level scripts. Verbs: 0 Ir a, 1 Mirar, 2 Coger,
+# 3 Usar, 4 Hablar. Targets are thing names (or @n for thing n) as listed by `look`.
+
+# intro: eight FLI films (the ship is sunk by Captain Mórtimer)
+wait 5000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+click 160 100
+wait 3000
+waitidle
+
+# the beach: the note nailed to the palm with a knife, and the crabs
+expect level 1
+do 2 nota
+expect inv 0
+expect inv 1
+do 2 cangrejos
+expect inv 4
+do 0 camino
+expect level 6
+
+# the town square and the bar: an empty bottle, the barman buys the crabs
+do 0 pueblo
+expect level 2
+do 0 puerta
+expect level 3
+do 2 @8
+expect inv 2
+use 4 barman
+expect inv 5
+expect inv 6
+do 0 puerta
+expect level 2
+
+# the vendor sells his only article, a fishing rod, a crab makes the bait
+do 4 vendedor
+choose 1
+choose 1
+expect inv 7
+expect noinv 6
+combine 5 7
+expect inv 8
+
+# back at the beach: catch a fish, fill the bottle, fish + knife, then + water = "wine"
+do 0 camino
+expect level 6
+do 0 playa
+expect level 1
+use 8 orilla
+expect inv 9
+use 2 orilla
+expect inv 3
+combine 9 0
+expect inv 10
+combine 10 3
+expect inv 11
+
+# the village: a contest card in the rubbish, Laela in the alley
+do 0 camino
+expect level 6
+do 0 pueblo
+expect level 2
+do 0 @3
+expect level 4
+do 2 basura
+expect inv 12
+do 0 callejon
+waitidle
+waitidle
+expect var 1011 1
+
+# the old man's house (the first time only a 70 s film): a magnet in the fireplace
+do 0 puerta
+waitidle
+expect var 1010 1
+do 0 puerta
+expect level 5
+do 2 chimenea
+expect inv 18
+combine 18 7
+expect inv 19
+do 0 puerta
+expect level 4
+do 0 camino
+expect level 2
+
+# the magnet rod fishes a shovel out of the sea
+do 0 @0
+expect level 6
+do 0 playa
+expect level 1
+use 19 orilla
+expect inv 16
+
+# the cemetery: dig two graves for the Monkey Island pirate card and the teeth
+do 0 camino
+do 0 cementerio
+expect level 7
+do 0 @0
+expect level 8
+use 16 @4
+expect inv 20
+use 16 @1
+expect inv 17
+
+# the crew: the old man gets his teeth, the pirate sees the card
+do 0 camino
+expect level 7
+do 0 @1
+expect level 6
+do 0 pueblo
+expect level 2
+do 0 @3
+expect level 4
+do 0 puerta
+expect level 5
+use 17 viejo
+expect var 1017 1
+do 0 puerta
+expect level 4
+do 0 camino
+expect level 2
+use 20 pirata
+expect var 1018 1
+expect var 1017 2
+
+# the bar: swap the drunk's energy drink for the "wine", win the arm-wrestling
+# contest, and the prize buys a ship (the drunk joins the crew)
+do 0 puerta
+expect level 3
+use 11 borracho
+expect inv 14
+use 12 barman
+waitidle
+expect inv 13
+use 13 barman
+waitidle
+
+# the port: the ship, the final film and the credits, then EXIT
+expect level 9
+do 4 gente
+waitidle
+waitidle
+expect exited
