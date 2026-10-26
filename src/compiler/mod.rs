@@ -6,5 +6,5 @@ pub mod limitmov;
 pub mod pack;
 pub mod parser;
 
-pub use compile::{compile_project, rle_encode};
+pub use compile::{CompileOptions, Target, compile_project, compile_project_with, rle_encode};
 pub use pack::pack_game;

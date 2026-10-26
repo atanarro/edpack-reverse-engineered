@@ -6,8 +6,11 @@
 //! .MOUSE     -> NIVEL.MOU     .ACINVINV  -> NIVEL.IAC   .TITLE -> NIVEL.TIT
 //! .LEVEL n + .ONLYxxx + .DATFILE"name" -> a LOADDATA data file
 //! ```
-//! Unlike the original every file starts from a clean state (ED.EXE leaks
-//! data from the previously compiled file into unused tables).
+//! Output is byte for byte ED.EXE's: v2.0's by default, v2.02's with
+//! [`Target::V202`]. ED.EXE compiles every file one wildcard matches in one
+//! run and leaks each level's data into the next (see `LevelState`); by
+//! default every file is compiled on its own, and
+//! [`CompileOptions::carry_over`] reproduces such a run.
 
 use std::collections::BTreeMap;
 
@@ -15,7 +18,40 @@ use super::codegen::compile_script;
 use super::limitmov::{RULES, add_limitmov, new_rule_table};
 use super::parser::{Arg, Item, Stmt, parse_ed};
 use crate::Error;
+use crate::level::LevelFormat;
 use crate::pcx::decode_pcx;
+
+/// Which ED.EXE's output to produce.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Target {
+    /// ED.EXE v2.0 (shareware kit): 10-byte animation records, 6 cursors per DEFMOUSE.
+    #[default]
+    V20,
+    /// ED.EXE v2.02 (shareware kit, for RUNDAT.EXE v1.03): 12-byte animation
+    /// records whose skip word is -1, 10 cursors per DEFMOUSE.
+    V202,
+}
+
+impl Target {
+    /// The level layout this target writes.
+    pub fn level_format(self) -> LevelFormat {
+        match self {
+            Target::V20 => LevelFormat::Shareware,
+            Target::V202 => LevelFormat::SharewareV103,
+        }
+    }
+
+    fn anim_size(self) -> usize {
+        self.level_format().anim_size()
+    }
+
+    fn cursors(self) -> usize {
+        match self {
+            Target::V20 => 6,
+            Target::V202 => 10,
+        }
+    }
+}
 
 fn header(kind: u8) -> Vec<u8> {
     let mut h = vec![0u8; 30];
@@ -61,6 +97,7 @@ impl Buf {
         for (i, &c) in s.iter().take(max - 1).enumerate() {
             self.0[o + i] = c.wrapping_add(key);
         }
+        self.0[o + s.len().min(max - 1)] = 0;
     }
 }
 
@@ -86,35 +123,155 @@ fn index(v: i32, max: usize, ctx: &str) -> Result<usize, Error> {
     }
 }
 
-/// Result of compiling one source file: file name -> bytes.
-fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<u8>), Error> {
-    let (mut gfx, mut files, mut limit, mut things) =
-        (Buf::new(0x34), Buf::new(0x104), Buf::new(0x230), Buf::new(0xac8));
-    let mut order = vec![0xffu8; 0x1e];
-    let (mut doors, mut pool, mut offs, mut code) =
-        (Buf::new(0xc8), vec![0u8; 0x61a8], Buf::new(0x1f4), Buf::new(0x2710));
-    let (mut actions, mut anims, mut acinvth) = (Buf::new(0x64), Buf::new(0x1f4), Buf::new(0xf0));
-    let (mut cooranim, mut selectext) = (Buf::new(0x3e8), Buf::new(0x258));
-    let mut msgs: Vec<Buf> = (0..5).map(|_| Buf::new(250)).collect();
-    let (mut scalemov, mut shadowmov, mut deframes) = (Buf::new(0x168), Buf::new(0xf0), Buf::new(0xa28));
-    let mut rules = new_rule_table();
-    for i in 0..250 {
-        offs.w16(i * 2, -1);
+/// Everything a level is compiled into. ED.EXE keeps it in global memory
+/// and only partly resets it between the files of one run (see
+/// [`LevelState::next_file`] and [`CompileOptions::carry_over`]).
+struct LevelState {
+    gfx: Buf,
+    files: Buf,
+    limit: Buf,
+    things: Buf,
+    order: Vec<u8>,
+    doors: Buf,
+    pool: Vec<u8>,
+    offs: Buf,
+    code: Buf,
+    actions: Buf,
+    anims: Buf,
+    acinvth: Buf,
+    cooranim: Buf,
+    selectext: Buf,
+    msgs: Vec<Buf>,
+    scalemov: Buf,
+    shadowmov: Buf,
+    deframes: Buf,
+    rules: Vec<[i32; 11]>,
+    pool_pos: usize,
+    code_pos: usize,
+}
+
+impl LevelState {
+    fn new(target: Target) -> LevelState {
+        let anim_size = target.anim_size();
+        let mut st = LevelState {
+            gfx: Buf::new(0x34),
+            files: Buf::new(0x104),
+            limit: Buf::new(0x230),
+            things: Buf::new(0xac8),
+            order: vec![0xff; 0x1e],
+            doors: Buf::new(0xc8),
+            pool: vec![0; 0x61a8],
+            offs: Buf::new(0x1f4),
+            code: Buf::new(0x2710),
+            actions: Buf::new(0x64),
+            anims: Buf::new(50 * anim_size),
+            acinvth: Buf::new(0xf0),
+            cooranim: Buf::new(0x3e8),
+            selectext: Buf::new(0x258),
+            msgs: (0..5).map(|_| Buf::new(250)).collect(),
+            scalemov: Buf::new(0x168),
+            shadowmov: Buf::new(0xf0),
+            deframes: Buf::new(0xa28),
+            rules: new_rule_table(),
+            pool_pos: 0,
+            code_pos: 1,
+        };
+        if anim_size == 12 {
+            for i in 0..50 {
+                st.anims.w16(i * 12 + 10, -1); // no skip target
+            }
+        }
+        for i in 0..250 {
+            st.offs.w16(i * 2, -1);
+        }
+        st
     }
-    let (mut pool_pos, mut code_pos) = (0usize, 1usize);
+
+    /// What ED.EXE resets before the next file of a run: the text pool and
+    /// the bytecode are cleared but filled on from where the previous file
+    /// stopped; text and script offsets, animations and the thing order start
+    /// over. The other tables are only marked unused (a flag or a string's
+    /// first byte cleared), so the rest of each record keeps the previous
+    /// file's data wherever this one defines nothing.
+    fn next_file(&mut self, target: Target) {
+        let fresh = LevelState::new(target);
+        self.pool.fill(0);
+        self.code.0.fill(0);
+        self.offs = fresh.offs;
+        self.actions = fresh.actions;
+        self.anims = fresh.anims;
+        self.order = fresh.order;
+        for m in self.msgs.iter_mut() {
+            m.0[0] = 0;
+        }
+        let unflag = |b: &mut Buf, size: usize, at: usize, n: usize| {
+            for r in b.0.chunks_mut(size) {
+                r[at..at + n].fill(0);
+            }
+        };
+        unflag(&mut self.gfx, 13, 0, 1);
+        unflag(&mut self.files, 13, 0, 1);
+        unflag(&mut self.limit, 14, 0, 2);
+        unflag(&mut self.things, 92, 0, 9); // AREA and the defined flag
+        unflag(&mut self.things, 92, 0x2b, 1); // mode
+        unflag(&mut self.doors, 10, 0, 2);
+        unflag(&mut self.acinvth, 8, 0, 2);
+        unflag(&mut self.cooranim, 10, 0, 10);
+        unflag(&mut self.selectext, 12, 10, 2);
+        unflag(&mut self.scalemov, 18, 0, 2);
+        unflag(&mut self.shadowmov, 12, 0, 2);
+        unflag(&mut self.deframes, 52, 0, 1);
+        for r in self.rules.iter_mut() {
+            r[0] = 0;
+        }
+    }
+}
+
+/// Result of compiling one source file: file name -> bytes.
+fn compile_level(
+    items: &[Item],
+    file: &str,
+    level: i32,
+    target: Target,
+    st: &mut LevelState,
+) -> Result<(String, Vec<u8>), Error> {
+    let anim_size = target.anim_size();
+    let LevelState {
+        gfx,
+        files,
+        limit,
+        things,
+        order,
+        doors,
+        pool,
+        offs,
+        code,
+        actions,
+        anims,
+        acinvth,
+        cooranim,
+        selectext,
+        msgs,
+        scalemov,
+        shadowmov,
+        deframes,
+        rules,
+        pool_pos,
+        code_pos,
+    } = st;
     let (mut n_limit, mut n_acinvth, mut n_scale, mut n_shadow) = (0, 0, 0, 0);
     let (mut only, mut datfile): (Option<String>, Option<Vec<u8>>) = (None, None);
 
     let mut emit_script = |body: &[Stmt], code: &mut Buf| -> Result<usize, Error> {
         let words = compile_script(body, file)?;
-        if code_pos + words.len() > 5000 {
+        if *code_pos + words.len() > 5000 {
             return Err(Error::new(format!("{file}: demasiado código en el nivel")));
         }
-        let base = code_pos;
+        let base = *code_pos;
         for (i, w) in words.iter().enumerate() {
             code.w16((base + i) * 2, *w);
         }
-        code_pos += words.len();
+        *code_pos += words.len();
         Ok(base)
     };
 
@@ -134,16 +291,16 @@ fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<
                 let ctx = format!("{file}:{line} {kind}");
                 match kind.as_str() {
                     "ACTION" => {
-                        let base = emit_script(body, &mut code)?;
+                        let base = emit_script(body, code)?;
                         actions.w16(index(*n, 50, &ctx)? * 2, base as i32);
                     }
                     "ANIMATION" => {
-                        let base = emit_script(body, &mut code)?;
-                        let a = index(*n, 50, &ctx)? * 10;
+                        let base = emit_script(body, code)?;
+                        let a = index(*n, 50, &ctx)? * anim_size;
                         anims.w16(a, 0);
                         anims.w16(a + 2, base as i32);
                     }
-                    "THING" => compile_thing(index(*n, 30, &ctx)?, body, &mut things, &mut order, file)?,
+                    "THING" => compile_thing(index(*n, 30, &ctx)?, body, things, order, file)?,
                     _ => return Err(Error::new(format!("{ctx}: bloque inesperado en un nivel"))),
                 }
             }
@@ -167,7 +324,7 @@ fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<
                         }
                     }
                     "LIMITMOV" => {
-                        add_limitmov(&mut rules, num(a(0), &ctx)?, num(a(1), &ctx)?, num(a(2), &ctx)?, num(a(3), &ctx)?)
+                        add_limitmov(rules, num(a(0), &ctx)?, num(a(1), &ctx)?, num(a(2), &ctx)?, num(a(3), &ctx)?)
                     }
                     "DOOR" => {
                         let o = index(num(a(0), &ctx)?, 20, &ctx)? * 10;
@@ -179,12 +336,12 @@ fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<
                     "TEXT" => {
                         let id = index(num(a(0), &ctx)?, 250, &ctx)?;
                         let s = string(a(1), &ctx)?;
-                        if pool_pos + s.len() + 1 > pool.len() {
+                        if *pool_pos + s.len() + 1 > pool.len() {
                             return Err(Error::new(format!("{ctx}: no caben más textos")));
                         }
-                        offs.w16(id * 2, pool_pos as i32);
-                        pool[pool_pos..pool_pos + s.len()].copy_from_slice(s);
-                        pool_pos += s.len() + 1;
+                        offs.w16(id * 2, *pool_pos as i32);
+                        pool[*pool_pos..*pool_pos + s.len()].copy_from_slice(s);
+                        *pool_pos += s.len() + 1;
                     }
                     "ACINVTH" => {
                         if n_acinvth >= 30 {
@@ -212,6 +369,7 @@ fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<
                     }
                     "DEFFRAMES" => {
                         let o = index(num(a(0), &ctx)?, 50, &ctx)? * 52;
+                        deframes.w8(o, 1); // "defined" flag; the runtime doesn't read it
                         let mut k = 0;
                         for x in &args[1..] {
                             let v = num(Some(x), &ctx)?;
@@ -261,8 +419,14 @@ fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<
             limitmov.w16(i * 22 + k * 2, *v);
         }
     }
-    for b in pool.iter_mut() {
-        *b = b.wrapping_add(0x0f);
+    let pool: Vec<u8> = pool.iter().map(|b| b.wrapping_add(0x0f)).collect();
+    // ED.EXE encodes the thing names in place up to their NUL and never
+    // decodes them, so a name left over from an earlier file of the run is
+    // encoded once more with every file.
+    for name in things.0.chunks_mut(92).map(|t| &mut t[0x31..0x40]) {
+        for c in name.iter_mut().take_while(|c| **c != 0) {
+            *c = c.wrapping_add(0x0d);
+        }
     }
 
     if let Some(kind) = only {
@@ -309,7 +473,7 @@ fn compile_level(items: &[Item], file: &str, level: i32) -> Result<(String, Vec<
     for b in blocks {
         if b.is_empty() { out.push(0) } else { out.extend(rle_encode(b)) }
     }
-    for m in &msgs {
+    for m in msgs.iter() {
         out.extend(rle_encode(&m.0));
     }
     for b in [&scalemov.0, &shadowmov.0, &deframes.0] {
@@ -332,9 +496,12 @@ fn compile_thing(n: usize, body: &[Stmt], things: &mut Buf, order: &mut [u8], fi
         let n_at = |i: usize| num(args.get(i), &ctx);
         match name.as_str() {
             "NAME" => {
-                for (i, &c) in string(args.first(), &ctx)?.iter().take(14).enumerate() {
-                    things.w8(o + 0x31 + i, c as i32 + 0x0d);
+                // stored plain; encoded when the level is written
+                let s = string(args.first(), &ctx)?;
+                for (i, &c) in s.iter().take(14).enumerate() {
+                    things.w8(o + 0x31 + i, c as i32);
                 }
+                things.w8(o + 0x31 + s.len().min(14), 0);
             }
             "INDEX" => {
                 let i = n_at(0)?;
@@ -382,14 +549,16 @@ fn compile_inventory(
     file: &str,
     resources: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<Vec<u8>, Error> {
-    let mut records = Vec::new();
+    let mut records: Vec<Vec<u8>> = Vec::new();
     let mut palette = vec![0u8; 768];
     for it in items {
         let Item::Block { kind, body, .. } = it else { continue };
         if kind != "OBJINV" {
             continue;
         }
-        let mut rec = Buf::new(0x4aa);
+        // ED.EXE fills one record buffer for every object without clearing it,
+        // so past each string's NUL a record keeps the previous object's bytes.
+        let mut rec = Buf(records.last().cloned().unwrap_or_else(|| vec![0; 0x4aa]));
         for s in body {
             let Stmt::Cmd { name, args, line } = s else { continue };
             let ctx = format!("{file}:{line} {name}");
@@ -483,15 +652,15 @@ fn compile_movs(items: &[Item]) -> Vec<u8> {
     out
 }
 
-fn compile_mouse(items: &[Item]) -> Vec<u8> {
+fn compile_mouse(items: &[Item], target: Target) -> Vec<u8> {
     let mut recs = Vec::new();
     for it in items {
         let Item::Block { kind, values, .. } = it else { continue };
         if kind != "DEFMOUSE" {
             continue;
         }
-        let mut e = Buf::new(72);
-        for (i, v) in values.iter().take(36).enumerate() {
+        let mut e = Buf::new(target.cursors() * 12);
+        for (i, v) in values.iter().take(target.cursors() * 6).enumerate() {
             e.w16(i * 2, *v);
         }
         recs.push(e.0);
@@ -549,14 +718,45 @@ fn compile_title(items: &[Item], file: &str) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
-/// Compile a set of source files (name -> source bytes in code page 850).
-/// `resources` looks up PCX files (needed by .INVENTARY).
+/// How to compile a project.
+#[derive(Clone, Debug, Default)]
+pub struct CompileOptions {
+    pub target: Target,
+    /// Source files (upper case) compiled in this order in one ED.EXE run,
+    /// carrying each level's state over to the next as ED.EXE does (needed
+    /// to rebuild a shipped EDGAME.DAT byte for byte). The other files are
+    /// compiled on their own.
+    pub carry_over: Vec<String>,
+}
+
+/// Compile a set of source files (name -> source bytes in code page 850)
+/// as ED.EXE v2.0 does, each on its own. `resources` looks up PCX files
+/// (needed by .INVENTARY).
 pub fn compile_project(
     sources: &BTreeMap<String, Vec<u8>>,
     resources: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<BTreeMap<String, Vec<u8>>, Error> {
+    compile_project_with(sources, resources, &CompileOptions::default())
+}
+
+/// [`compile_project`] with [`CompileOptions`].
+pub fn compile_project_with(
+    sources: &BTreeMap<String, Vec<u8>>,
+    resources: &dyn Fn(&str) -> Option<Vec<u8>>,
+    opts: &CompileOptions,
+) -> Result<BTreeMap<String, Vec<u8>>, Error> {
+    let target = opts.target;
     let mut out = BTreeMap::new();
-    for (file, src) in sources {
+    for name in &opts.carry_over {
+        if !sources.contains_key(name) {
+            return Err(Error::new(format!("{name}: no encuentro el archivo")));
+        }
+    }
+    let alone = sources.keys().filter(|f| !opts.carry_over.contains(f));
+    let (mut run, mut started) = (LevelState::new(target), false);
+    for file in opts.carry_over.iter().chain(alone) {
+        let src = &sources[file];
+        let chained = opts.carry_over.contains(file);
         let items = parse_ed(src, file)?;
         let dir = items.iter().find_map(|i| match i {
             Item::Directive { name, arg, .. } if !name.starts_with("ONLY") && name != "DATFILE" => {
@@ -573,7 +773,13 @@ pub fn compile_project(
                     Some(Arg::Num(n)) if (0..1000).contains(&n) => n,
                     _ => return Err(Error::new(format!("{file}: .LEVEL necesita un número de nivel (0-999)"))),
                 };
-                let (name, bytes) = compile_level(&items, file, n)?;
+                let mut fresh = LevelState::new(target);
+                let st = if chained { &mut run } else { &mut fresh };
+                if chained && started {
+                    st.next_file(target);
+                }
+                started |= chained;
+                let (name, bytes) = compile_level(&items, file, n, target, st)?;
                 out.insert(name, bytes);
             }
             "INVENTARY" | "OBJECT" => {
@@ -583,7 +789,7 @@ pub fn compile_project(
                 out.insert("NIVEL.MOV".into(), compile_movs(&items));
             }
             "MOUSE" => {
-                out.insert("NIVEL.MOU".into(), compile_mouse(&items));
+                out.insert("NIVEL.MOU".into(), compile_mouse(&items, target));
             }
             "ACINVINV" => {
                 out.insert("NIVEL.IAC".into(), compile_iac(&items, file)?);

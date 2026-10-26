@@ -68,6 +68,28 @@ calling the port, and run the ledger again.
 - A vector holds only the bytes the original read or wrote. The Rust test loads them into
   a zeroed `Memory`, so if the port reads anything the original did not, it reads 0.
 
+## The compiler against ED.EXE (DOSBox)
+
+`ed_dosbox.py` runs the original ED.EXE and ED2DAT.EXE in DOSBox on a kit's sources:
+
+```sh
+# every .ED in its own fresh ED.EXE run, then ED2DAT (LETRAS1.FNT as NIVEL.FNT)
+python3 tools/re/ed_dosbox.py <kit with ED.EXE, ED.DAT, ED2DAT.EXE> <FUENTES> <out>
+# the ROOMn.ED files in one ED.EXE run, in this order
+python3 tools/re/ed_dosbox.py <kit> <FUENTES> <out> --chain 4,2,0,1,3,5
+```
+
+`edc` reproduces every file byte for byte, for ED.EXE v2.0 and, with `--v202`, v2.02;
+`tests/game.rs` holds the lengths and hashes of the original's output.
+
+ED.EXE compiles every file a wildcard matches in one run and only partly resets its memory
+between files: the text pool and the bytecode are cleared but filled on from where the previous
+file stopped, and most tables are only marked unused, so their records keep the previous file's
+data (`LevelState::next_file` in `src/compiler/compile.rs`). The shipped demos were built that way:
+rooms 4, 2, 0, 1, 3, 5 in one run for the v2.0 demo, and 4, 2, 0, 1, 3 plus room 5 on its own for
+the v2.02 one. `edc --chain` reproduces such a run, and both shipped `EDGAME.DAT` files are rebuilt
+from their sources byte for byte.
+
 ## Limits
 
 - Only state in the data segment is compared. Far buffers (screen, fonts, level code) are

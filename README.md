@@ -91,6 +91,9 @@ quits, as in the original.
 
 ```sh
 target/release/edc src out --pack                    # ED.EXE + ED2DAT.EXE
+target/release/edc src out --pack --v202             # ED.EXE v2.02's formats (RUNDAT v1.03)
+target/release/edc FUENTES out --pack --chain ROOM4.ED,ROOM2.ED,ROOM0.ED,ROOM1.ED,ROOM3.ED,ROOM5.ED
+                                                     # rebuilds the demo's shipped EDGAME.DAT exactly
 target/release/edtool run EDGAME.DAT shots tests/walkthrough/peter.txt   # headless play + PNGs
 target/release/edtool disasm EDGAME.DAT 3            # decompile level 3's scripts
 target/release/edtool dump EDGAME.DAT                # summary of every level
@@ -108,10 +111,13 @@ EDPACK_DEMO_DAT=/path/to/DEMO/EDGAME.DAT EDPACK_DEMO_SRC=/path/to/FUENTES cargo 
 
 They play the demo to the end three ways: from the original `EDGAME.DAT`, from the sources, and
 from an `EDGAME.DAT` built by `edc --pack`. They check that all three runs end at the same
-simulated moment, and that the compiler's output matches the original ED.EXE's.
+simulated moment. The compiler's output is checked byte for byte against what the original ED.EXE
+and ED2DAT.EXE produce (run in DOSBox, `tools/re/README.md`), and the demo's shipped `EDGAME.DAT`
+is rebuilt from its sources byte for byte.
 
 The *PCManía* 67 build of the demo is tested with `EDPACK_DEMO103_DAT` (its `EDGAME.DAT`) and
-`EDPACK_DEMO103_SRC` (its `FUENTES` folder, compiled and compared with the original ED.EXE v2.02).
+`EDPACK_DEMO103_SRC` (its `FUENTES` folder, compiled and compared byte for byte with the original
+ED.EXE v2.02, and rebuilt into its shipped `EDGAME.DAT`).
 Other games are played to their endings when given: `EDPACK_NAURU_DAT` and `EDPACK_DADTON_DAT`
 name the `EDGAME.DAT` of *El Dios de Nauru* and *Dadton Aguinández*, and `EDPACK_MANOLO` the folder with the `RESOURCE.DAT` of *Las Aventuras
 de Manolo Kabezabolo* (EDPACK v1), and `EDPACK_V1DEMO` the folder of the EDPACK v1 demo. Tests whose variables are not set are skipped.

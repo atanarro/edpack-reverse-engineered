@@ -18,7 +18,7 @@ use std::path::PathBuf;
 
 use edpack::compiler::codegen::compile_script;
 use edpack::compiler::parser::{Item, parse_ed};
-use edpack::compiler::{compile_project, pack_game};
+use edpack::compiler::{CompileOptions, Target, compile_project, compile_project_with, pack_game};
 use edpack::dat::GameArchive;
 use edpack::engine::Options;
 use edpack::game::Game;
@@ -87,7 +87,7 @@ fn packed_sources_play_to_the_end() {
     files.extend(compiled());
     let fnt = files["LETRAS1.FNT"].clone();
     files.insert("NIVEL.FNT".into(), fnt);
-    let dat = pack_game(&files, 6).unwrap();
+    let dat = pack_game(&files, 6, LevelFormat::Shareware).unwrap();
     play(Game::Packed(GameArchive::new(dat)));
 }
 
@@ -101,6 +101,107 @@ fn save_and_load_restore_the_game_state() {
     assert_eq!(h.var(1003), 1);
     h.run("load 0; expect inv 0; expect inv 1").unwrap();
     assert_eq!(h.var(1003), 0);
+}
+
+/// What the original ED.EXE and ED2DAT.EXE produce from a demo's sources,
+/// each .ED compiled in a fresh ED.EXE run under DOSBox, then packed with
+/// LETRAS1.FNT as NIVEL.FNT (`tools/re/ed_dosbox.py`): (file, length, FNV-1a 64).
+const ED_V20_OUTPUT: [(&str, usize, u64); 12] = [
+    ("NIVEL.000", 2008, 0xee056827acafc770),
+    ("NIVEL.001", 5126, 0x0b04334a4a0a49b2),
+    ("NIVEL.002", 2314, 0x1c99cdaa4f9eb017),
+    ("NIVEL.003", 3144, 0x4d09944fe372425a),
+    ("NIVEL.004", 3495, 0xa4d448069c91ee99),
+    ("NIVEL.005", 4621, 0x5fb0b74db99b333b),
+    ("NIVEL.IAC", 530, 0x260256181e27471c),
+    ("NIVEL.INV", 13934, 0xa89e661bcceb8e11),
+    ("NIVEL.MOU", 104, 0x8165f928987c3744),
+    ("NIVEL.MOV", 448, 0xc1e5603c6ffb7022),
+    ("NIVEL.TIT", 82, 0xe964f0c202963651),
+    ("EDGAME.DAT", 372508, 0x884de46b4ea76120),
+];
+
+/// The same for ED.EXE v2.02 and the v2.02 kit's demo sources.
+const ED_V202_OUTPUT: [(&str, usize, u64); 12] = [
+    ("NIVEL.000", 2192, 0x4fcf88093d0a5f3c),
+    ("NIVEL.001", 5310, 0x4ccd798562355464),
+    ("NIVEL.002", 2498, 0x570c25a59e2af61b),
+    ("NIVEL.003", 3328, 0xfbd6c23bb1085554),
+    ("NIVEL.004", 3679, 0xcc5e21cf7a1fff9b),
+    ("NIVEL.005", 5145, 0x0ec301d8d9884aa5),
+    ("NIVEL.IAC", 530, 0x260256181e27471c),
+    ("NIVEL.INV", 13934, 0xa89e661bcceb8e11),
+    ("NIVEL.MOU", 152, 0x52f07a4feae98a44),
+    ("NIVEL.MOV", 448, 0xc1e5603c6ffb7022),
+    ("NIVEL.TIT", 82, 0xe964f0c202963651),
+    ("EDGAME.DAT", 374000, 0x0f71522ab468a618),
+];
+
+fn fnv1a(b: &[u8]) -> u64 {
+    b.iter().fold(0xcbf29ce484222325, |h, &x| (h ^ x as u64).wrapping_mul(0x100000001b3))
+}
+
+/// Compile and pack a sources folder like edc does: (compiled files, EDGAME.DAT).
+fn build(src: &std::path::Path, opts: &CompileOptions) -> (BTreeMap<String, Vec<u8>>, Vec<u8>) {
+    let mut files: BTreeMap<String, Vec<u8>> = std::fs::read_dir(src)
+        .unwrap()
+        .flatten()
+        .map(|e| (e.file_name().to_string_lossy().to_uppercase(), std::fs::read(e.path()).unwrap()))
+        .collect();
+    let sources = files.iter().filter(|(n, _)| n.ends_with(".ED")).map(|(n, b)| (n.clone(), b.clone())).collect();
+    let out = compile_project_with(&sources, &|n: &str| files.get(&n.to_uppercase()).cloned(), opts).unwrap();
+    files.extend(out.clone());
+    let fnt = files["LETRAS1.FNT"].clone();
+    files.insert("NIVEL.FNT".into(), fnt);
+    let dat = pack_game(&files, 6, opts.target.level_format()).unwrap();
+    (out, dat)
+}
+
+fn check_ed_output(src: &std::path::Path, target: Target, expected: &[(&str, usize, u64)]) {
+    let (out, dat) = build(src, &CompileOptions { target, ..Default::default() });
+    for &(name, len, hash) in expected {
+        let mine = if name == "EDGAME.DAT" { &dat } else { &out[name] };
+        assert_eq!((mine.len(), fnv1a(mine)), (len, hash), "{name} differs from ED.EXE's ({target:?})");
+    }
+}
+
+#[test]
+fn compiler_output_matches_ed_exe_byte_for_byte() {
+    if !have_demo() {
+        return;
+    }
+    check_ed_output(&src_path(), Target::V20, &ED_V20_OUTPUT);
+}
+
+#[test]
+fn compiler_output_matches_ed_exe_v202_byte_for_byte() {
+    let Some((_, src)) = demo103() else { return };
+    check_ed_output(&src, Target::V202, &ED_V202_OUTPUT);
+}
+
+/// The shipped archives were built in one ED.EXE run per demo, which carries
+/// state from file to file: rooms 4, 2, 0, 1, 3, 5 for the v2.0 demo; 4, 2,
+/// 0, 1, 3 for the v2.02 one, whose room 5 was recompiled on its own.
+fn chain(rooms: &[u32]) -> Vec<String> {
+    rooms.iter().map(|r| format!("ROOM{r}.ED")).collect()
+}
+
+#[test]
+fn compiler_rebuilds_the_shipped_demo_byte_for_byte() {
+    if !have_demo() {
+        return;
+    }
+    let opts = CompileOptions { target: Target::V20, carry_over: chain(&[4, 2, 0, 1, 3, 5]) };
+    let (_, dat) = build(&src_path(), &opts);
+    assert!(dat == std::fs::read(dat_path()).unwrap(), "rebuilt EDGAME.DAT differs from the shipped one");
+}
+
+#[test]
+fn compiler_rebuilds_the_shipped_v202_demo_byte_for_byte() {
+    let Some((shipped, src)) = demo103() else { return };
+    let opts = CompileOptions { target: Target::V202, carry_over: chain(&[4, 2, 0, 1, 3]) };
+    let (_, dat) = build(&src, &opts);
+    assert!(dat == std::fs::read(shipped).unwrap(), "rebuilt EDGAME.DAT differs from the shipped one");
 }
 
 #[test]

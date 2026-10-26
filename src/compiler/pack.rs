@@ -11,7 +11,9 @@ use crate::dat::Special;
 use crate::level::{LevelFormat, file_entry, gfx_entry, load_level};
 use crate::memory::Memory;
 
-pub fn pack_game(files: &BTreeMap<String, Vec<u8>>, levels: usize) -> Result<Vec<u8>, Error> {
+/// Pack `levels` level slots whose files are in `format` (as written by the
+/// matching ED.EXE).
+pub fn pack_game(files: &BTreeMap<String, Vec<u8>>, levels: usize, format: LevelFormat) -> Result<Vec<u8>, Error> {
     let get = |n: &str| files.get(&n.to_uppercase());
     let n_entries = levels + Special::ALL.len();
     let mut out = vec![0u8; n_entries * 4];
@@ -23,7 +25,7 @@ pub fn pack_game(files: &BTreeMap<String, Vec<u8>>, levels: usize) -> Result<Vec
         let lname = format!("NIVEL.{n:03}");
         let Some(file) = get(&lname) else { continue };
         let mut mem = Memory::new();
-        let end = load_level(&mut mem, file, 0, false, LevelFormat::Shareware)?.end;
+        let end = load_level(&mut mem, file, 0, false, format)?.end;
         table[n] = out.len() as u32;
         out.extend(&file[..end]); // the offset tables must follow the last block
         let tables_at = out.len();
@@ -53,9 +55,10 @@ pub fn pack_game(files: &BTreeMap<String, Vec<u8>>, levels: usize) -> Result<Vec
             out[tables_at + at + 4..tables_at + at + 8].copy_from_slice(&(size as u32).to_le_bytes());
         }
     }
-    for (k, s) in Special::ALL.iter().enumerate() {
+    // ED2DAT.EXE stores the font before the inventory, the reverse of their table order
+    for s in [Special::Fnt, Special::Inv, Special::Mov, Special::Mou, Special::Iac, Special::Tit] {
         let b = get(s.file_name()).ok_or_else(|| Error::new(format!("Falta {}", s.file_name())))?;
-        table[levels + k] = out.len() as u32;
+        table[levels + s.index()] = out.len() as u32;
         out.extend(b);
     }
     for (i, o) in table.iter().enumerate() {
