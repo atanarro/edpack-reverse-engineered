@@ -169,7 +169,8 @@ Some quirks of the original are reproduced on purpose, because games were tested
 
 Some things are deliberately different:
 
-- There is no shareware level limit and no start-up nag screen.
+- There is no shareware level limit. Shareware archives (6 level slots) do show the shareware
+  runtime's start-up notice: 6 seconds, or until a key is pressed.
 - Savegames use their own file format.
 - The screen is redrawn completely on every pass instead of with dirty rectangles.
 - FM music comes from an emulator.

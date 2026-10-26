@@ -139,11 +139,14 @@ pub struct Options {
     /// SETUP.CFG text speed 0..4 (the demo shipped with 3).
     pub text_speed: usize,
     pub seed: u64,
+    /// Show the shareware runtime's start-up notice for shareware archives
+    /// (off in the test harness, whose walkthroughs start at level 0).
+    pub shareware_notice: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { speed: 2, text_speed: 3, seed: 0x1234_5678_9abc_def1 }
+        Options { speed: 2, text_speed: 3, seed: 0x1234_5678_9abc_def1, shareware_notice: true }
     }
 }
 
@@ -187,6 +190,7 @@ pub struct Engine {
     /// RUNDAT v1.03: 16-bit program counters (the action's at CUR_ACTION_PC,
     /// with its compare flag moved out of the way).
     pub wide_pc: bool,
+    shareware_notice: bool,
 }
 
 /// The current action's program counter: u8, or u16 with RUNDAT v1.03.
@@ -245,6 +249,7 @@ impl Engine {
             rng: opts.seed | 1,
             v102,
             wide_pc,
+            shareware_notice: opts.shareware_notice,
         };
         e.mem.write(g::IAC, &iac);
         e.init_globals(opts.speed, opts.text_speed);
@@ -522,6 +527,38 @@ impl Engine {
     }
 
     // ------------------------------------------------------------ main loop
+
+    /// The shareware RUNDAT.EXE's start-up notice (main, 0xbb0e..0xbc3b):
+    /// four centred lines in the game's font, shown for 6 s or until a key
+    /// is pressed (mouse buttons don't count), before level 0.
+    fn shareware_notice(&mut self) {
+        const LINES: [(i32, &[u8]); 4] = [
+            (60, b"Esta aventura ha sido creada con"),
+            (73, b"la version SHAREWARE del EDPACK v2.0"),
+            (95, b"Para conseguir la version completa"),
+            (108, b"mira el archivo PEDIDO.TXT"),
+        ];
+        self.hide_cursor();
+        self.mem.set16(mo::MODE, 2);
+        self.vga.fill(0);
+        for (y, s) in LINES {
+            let x = 160 - self.font.width(s) / 2;
+            self.font.text(&mut self.vga, x, y, s, 15, 0);
+        }
+        // The original loads the BIOS default palette it saved at start-up;
+        // only colours 0 (black) and 15 (white) are on screen.
+        self.dac = [0; 768];
+        self.dac[45..48].fill(63);
+        self.mem.set16(g::WAIT, self.mem.i16(0xdd) * 6);
+        self.mem.set8(g::KEY, 0);
+        while self.key() == 0 && self.mem.i16(g::WAIT) > 0 {
+            self.wait(TICK_MS);
+        }
+        self.dac = [0; 768];
+        self.mem.set8(g::KEY, 0);
+        self.mem.set16(mo::MODE, 0);
+        self.show_cursor();
+    }
 
     fn main_loop(&mut self) {
         while !self.exited {
@@ -2378,6 +2415,9 @@ impl Core for Engine {
         Frame { screen: self.screen.clone(), palette: self.palette.to_vec(), exited: self.exited, error }
     }
     fn run(&mut self) {
+        if self.shareware_notice && self.game.is_shareware() {
+            self.shareware_notice();
+        }
         self.main_loop()
     }
     fn set_exited(&mut self) {

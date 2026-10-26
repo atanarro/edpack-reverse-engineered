@@ -31,8 +31,13 @@ pub struct Harness {
 }
 
 impl Harness {
+    /// A harness that starts at level 0 (no shareware notice).
     pub fn new(game: Game) -> Result<Harness, Error> {
-        let engine = Engine::new(game, Box::new(MemStorage::default()), Options::default())?;
+        Harness::with_options(game, Options { shareware_notice: false, ..Options::default() })
+    }
+
+    pub fn with_options(game: Game, opts: Options) -> Result<Harness, Error> {
+        let engine = Engine::new(game, Box::new(MemStorage::default()), opts)?;
         Ok(Harness {
             handle: engine.spawn(),
             now: 0.0,

@@ -27,6 +27,12 @@ impl Game {
         }
     }
 
+    /// Packed by the shareware ED2DAT.EXE (6 level slots): the archives the
+    /// shareware RUNDAT.EXE plays, with its start-up notice.
+    pub fn is_shareware(&self) -> bool {
+        matches!(self, Game::Packed(a) if a.level_slots() == 6)
+    }
+
     /// Compiled level n: (file bytes, offset of its header).
     pub fn level(&self, n: usize) -> Option<(&[u8], usize)> {
         match self {

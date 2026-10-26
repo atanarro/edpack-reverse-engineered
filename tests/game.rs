@@ -20,6 +20,7 @@ use edpack::compiler::codegen::compile_script;
 use edpack::compiler::parser::{Item, parse_ed};
 use edpack::compiler::{compile_project, pack_game};
 use edpack::dat::GameArchive;
+use edpack::engine::Options;
 use edpack::game::Game;
 use edpack::harness::Harness;
 use edpack::level::{LevelFormat, load_level, text_string};
@@ -268,4 +269,34 @@ fn demo103_scripts_match_ed_exe() {
     }
     // the v2.0 demo's 54 scripts plus the new ACTION 9 of level 5 (with ASLT)
     assert_eq!(checked, 55);
+}
+
+/// The shareware runtime's start-up notice (RUNDAT 0xbb0e): white text on
+/// black for 6 s, cut short by a key but not by a mouse click.
+#[test]
+fn shareware_notice_before_level_0() {
+    if !have_demo() {
+        return;
+    }
+    let notice = |h: &Harness| {
+        let f = h.last.as_ref().unwrap();
+        let white = f.screen[60 * 320..120 * 320].iter().filter(|&&c| c == 15).count();
+        white > 500 && f.palette[45..48] == [255, 255, 255]
+    };
+    let mut h = Harness::with_options(Game::open(&dat_path()).unwrap(), Options::default()).unwrap();
+    h.run("wait 1000; click 160 100; wait 4500").unwrap();
+    assert!(notice(&h), "the notice stays up for 6 s, clicks don't dismiss it");
+    h.run("wait 1000").unwrap();
+    assert!(!notice(&h), "the game starts after 6 s");
+
+    let mut h = Harness::with_options(Game::open(&dat_path()).unwrap(), Options::default()).unwrap();
+    h.run("wait 500").unwrap();
+    assert!(notice(&h));
+    h.run("key 57; wait 300").unwrap();
+    assert!(!notice(&h), "a key dismisses the notice");
+
+    // the harness default (used by the walkthroughs) starts at level 0
+    let mut h = Harness::new(Game::open(&dat_path()).unwrap()).unwrap();
+    h.run("wait 500").unwrap();
+    assert!(!notice(&h));
 }
