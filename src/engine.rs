@@ -611,12 +611,7 @@ impl Engine {
     }
 
     fn apply_shadow(&mut self) {
-        let Some(shade) = p::shadow_mov(&mut self.mem) else { return };
-        let (first, count) = (self.mem.i16(p::SHADOW_FIRST), self.mem.i16(p::SHADOW_COUNT));
-        if (0..256).contains(&first) && count > 0 && first + count < 256 {
-            self.mod_pal(first, count, shade);
-        }
-        self.mem.set8(g::PAL_DIRTY, 1);
+        p::apply_shadow(&mut self.mem);
     }
 
     // ------------------------------------------------------------ scripts
@@ -1539,11 +1534,7 @@ impl Engine {
     }
 
     pub fn mod_pal(&mut self, first: i32, count: i32, amount: i32) {
-        let n = if count > 255 { 256 - first } else { count };
-        for k in (3 * first)..(3 * (first + n)) {
-            let v = self.mem.u8(pal::ORIG + k as usize) + amount;
-            self.mem.set8(pal::CUR + k as usize, if amount >= 0 { v.min(63) } else { v.max(0) });
-        }
+        mod_pal(&mut self.mem, first, count, amount);
     }
 
     fn rotate_pal(&mut self, first: i32, mut count: i32, dir: i32) {
@@ -2391,5 +2382,14 @@ impl Core for Engine {
     }
     fn set_exited(&mut self) {
         self.exited = true;
+    }
+}
+
+/// MODPAL (0x587): the current palette is the base palette plus `amount`, clamped to 0..63.
+pub fn mod_pal(m: &mut Memory, first: i32, count: i32, amount: i32) {
+    let n = if count > 255 { 256 - first } else { count };
+    for k in (3 * first)..(3 * (first + n)) {
+        let v = m.u8(pal::ORIG + k as usize) + amount;
+        m.set8(pal::CUR + k as usize, if amount >= 0 { v.min(63) } else { v.max(0) });
     }
 }

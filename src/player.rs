@@ -176,7 +176,8 @@ pub fn go_xy(m: &mut Memory, x: i32, y: i32) {
             pass = 1;
             continue;
         }
-        if pass == 1 && counts[0] < counts[1] {
+        // a longer first scan wins: it is repeated, since the second one overwrote the path
+        if pass == 1 && counts[0] > counts[1] {
             pass = 2;
             continue;
         }
@@ -486,7 +487,18 @@ pub fn apply_scale_mov(m: &mut Memory) {
     }
 }
 
-/// SHADOWMOV (0x6930): the new shade to apply, if it changed.
+/// SHADOWMOV (0x6930): shade the palette range when the player's feet enter
+/// a SHADOWMOV zone with a new shade.
+pub fn apply_shadow(m: &mut Memory) {
+    let Some(shade) = shadow_mov(m) else { return };
+    let (first, count) = (m.i16(SHADOW_FIRST), m.i16(SHADOW_COUNT));
+    if (0..256).contains(&first) && count > 0 && first + count < 256 {
+        crate::engine::mod_pal(m, first, count, shade);
+    }
+    m.set8(crate::engine::g::PAL_DIRTY, 1);
+}
+
+/// The SHADOWMOV zone lookup of [`apply_shadow`]: the new shade, if it changed.
 pub fn shadow_mov(m: &mut Memory) -> Option<i32> {
     let (x, y) = feet(m);
     for i in 0..20 {
@@ -506,20 +518,21 @@ pub fn shadow_mov(m: &mut Memory) -> Option<i32> {
     None
 }
 
-/// Layer auto-swap of things with layer 0/1 (0x5606).
+/// Layer auto-swap of things with layer 0/1 (0x5606).  Mode and layer are
+/// read and written as words here, so the byte after each takes part.
 pub fn layer_swap(m: &mut Memory) {
-    let pf = m.i16(Y) + m.i16(MOV_H);
+    let pf = (m.i16(Y) + m.i16(MOV_H)) as i16;
     for t in 0..30 {
         let a = ds::THINGS + t * THING_SIZE;
-        if m.u8(a + 0x2b) == 0 {
+        if m.u16(a + 0x2b) == 0 {
             continue;
         }
-        let layer = m.u8(a + 0x15);
+        let layer = m.u16(a + 0x15);
         if layer == 2 || layer == 3 {
             continue;
         }
-        let front = m.i16(a + 0x1b) + m.i16(a + 0x23) >= pf;
-        m.set8(a + 0x15, front as i32);
+        let front = (m.i16(a + 0x1b) + m.i16(a + 0x23)) as i16 >= pf;
+        m.set16(a + 0x15, front as i32);
     }
 }
 

@@ -1,2 +1,6 @@
 /target
 /assets
+/.venv-re
+/tools/re/.cache
+/tests/oracle
+__pycache__/
