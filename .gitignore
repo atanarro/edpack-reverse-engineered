@@ -4,3 +4,4 @@
 /tools/re/.cache
 /tests/oracle
 __pycache__/
+*.zip
